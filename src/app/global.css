@@ -89,6 +89,158 @@ body {
   min-height: 0;
   display: flex;
   padding: 12px;
+  padding-top: 0;
+}
+
+.document-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 20px;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.document-bar__identity {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.document-bar__title {
+  max-width: 44ch;
+  overflow: hidden;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.document-bar__title:hover:not(:disabled),
+.document-bar__title:focus-visible {
+  border-color: var(--app-border);
+}
+
+.document-bar__rename {
+  display: flex;
+  gap: 6px;
+}
+
+.document-bar__rename input {
+  min-width: 18ch;
+  padding: 3px 6px;
+  border: 1px solid var(--app-accent);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.document-bar__save {
+  flex: none;
+  font-size: 0.78rem;
+  color: var(--app-muted);
+  white-space: nowrap;
+}
+
+.document-bar__save--error {
+  color: #b02a37;
+  font-weight: 600;
+}
+
+.document-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.document-bar__actions button,
+.document-bar__rename button {
+  padding: 5px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-background);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.document-bar__actions button:hover:not(:disabled),
+.document-bar__rename button:hover {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+}
+
+.document-bar__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.document-bar__file {
+  display: none;
+}
+
+.document-bar__notice {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.document-bar__notice--info {
+  background: #e7f1fb;
+  color: #14508a;
+}
+
+.document-bar__notice--error {
+  background: #fdeaea;
+  color: #8a1c27;
+}
+
+.document-bar__notice button {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.document-bar__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  color: #b02a37;
+}
+
+.workbook-status {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--app-muted);
+}
+
+.workbook-status p {
+  margin: 0;
 }
 
 .workbook-editor {

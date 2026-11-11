@@ -1,6 +1,6 @@
 # Technical decisions
 
-Recorded: 2026-11-11. Status: user-selected direction. Environment validation, NEAR connection factories and the spreadsheet workbook shell are implemented; see [implementation status](implementation.md).
+Recorded: 2026-11-11. Status: user-selected direction. Environment validation, NEAR connection factories, the spreadsheet workbook shell and local document persistence are implemented; see [implementation status](implementation.md).
 
 ## How decisions evolve
 
@@ -70,6 +70,8 @@ Use a versioned Trezu Sheets document envelope containing a stable document ID, 
 Capture current workbook state using the workbook save API. Native JSON export/import should round-trip the envelope, formulas, formatting, sheets, and supported plugin resources. Define migrations for older document versions; reject unsupported future versions without overwriting the original. Validate imported data and preserve a recoverable original before migration. Never export credentials or executable custom-function implementations.
 
 IndexedDB is a local draft store, not a guaranteed backup. Expose save failures and provide explicit downloadable exports. Future remote sync will also need authorization and conflict handling; the repository interface alone does not provide collaboration.
+
+Implementation notes (2026-11-11): the envelope lives in `src/features/documents/model/document-envelope.ts`; migrations in `document-migrations.ts` are an empty registry at schema version 1. Dexie's own database version describes the table layout and is separate from the envelope version. Imported JSON gets a new document id, so importing can never overwrite an existing local draft. CSV imports force text starting with `=` to a string, so a values-only file cannot introduce a formula.
 
 ## Free versus paid capabilities
 

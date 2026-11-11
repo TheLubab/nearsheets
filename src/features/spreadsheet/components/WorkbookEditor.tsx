@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from "react";
+import type { WorkbookSnapshot } from "../model/workbook-snapshot";
 import type { WorkbookSession } from "../univer/create-workbook-session";
 import { createWorkbookSession } from "../univer/create-workbook-session";
-import { createStarterWorkbook } from "../model/starter-workbook";
 
 type EditorStatus = "starting" | "ready" | "failed";
 
-interface WorkbookEditorProps {
+export interface WorkbookEditorProps {
   /**
-   * Called when the editor is ready. The session is the only supported way for
-   * application code to read or write the workbook; it is disposed on unmount
-   * and must not be retained by callers.
+   * Snapshot to open. Changing `documentId` remounts the editor with the new
+   * snapshot; changing the snapshot object alone does not, because Univer is
+   * the source of truth for the open workbook.
    */
-  onSessionReady?: (session: WorkbookSession) => void;
+  documentId: string;
+  initialWorkbook: WorkbookSnapshot;
+  /**
+   * Called when the editor is ready. `documentId` is the document this editor
+   * was mounted for, so a late callback from a replaced editor is detectable.
+   */
+  onSessionReady?: (session: WorkbookSession, documentId: string) => void;
 }
 
 /**
@@ -22,16 +28,25 @@ interface WorkbookEditorProps {
  * `dispose` is idempotent, so the editor survives that double cycle without
  * leaking canvas listeners, timers or React roots.
  */
-export function WorkbookEditor({ onSessionReady }: WorkbookEditorProps) {
+export function WorkbookEditor({
+  documentId,
+  initialWorkbook,
+  onSessionReady,
+}: WorkbookEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<EditorStatus>("starting");
   const [error, setError] = useState<string | null>(null);
 
-  // Keep the latest callback without re-mounting Univer on every render.
+  // Keep the latest callback and snapshot without remounting on every render.
   const onSessionReadyRef = useRef(onSessionReady);
   useEffect(() => {
     onSessionReadyRef.current = onSessionReady;
   }, [onSessionReady]);
+
+  const initialWorkbookRef = useRef(initialWorkbook);
+  useEffect(() => {
+    initialWorkbookRef.current = initialWorkbook;
+  }, [initialWorkbook]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -45,13 +60,13 @@ export function WorkbookEditor({ onSessionReady }: WorkbookEditorProps) {
     try {
       session = createWorkbookSession({
         container: host,
-        initialWorkbook: createStarterWorkbook(),
+        initialWorkbook: initialWorkbookRef.current,
         onReady: (readySession) => {
           if (!active) {
             return;
           }
           setStatus("ready");
-          onSessionReadyRef.current?.(readySession);
+          onSessionReadyRef.current?.(readySession, documentId);
         },
       });
     } catch (cause) {
@@ -70,7 +85,9 @@ export function WorkbookEditor({ onSessionReady }: WorkbookEditorProps) {
       active = false;
       session?.dispose();
     };
-  }, []);
+    // `documentId` is the identity of the open document. A new document must
+    // build a new Univer instance; cell-level edits never change this key.
+  }, [documentId]);
 
   return (
     <div className="workbook-editor">

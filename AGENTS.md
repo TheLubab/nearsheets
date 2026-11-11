@@ -12,6 +12,7 @@ Use `pnpm typecheck`, `pnpm build` and targeted tests such as `pnpm exec vitest 
 - Verify functionality with minimal, useful unit tests focused on meaningful behavior. Mock external services and blockchain interactions.
 - Do not test against live production services, treasuries or blockchain accounts unless the user explicitly requests it. Avoid repeated live probes and transactions.
 - Do not start development servers, preview servers or other long-running application processes unless the user explicitly asks.
+- Do not launch headless browsers or screenshot tooling. When a change genuinely needs visual or in-browser confirmation, ask the user to check it and say exactly what to look at.
 - Do not add broad test suites, redundant cases or tests that merely mirror implementation details. Run only the checks relevant to the change, and stop once they pass unless a new failure or change warrants another run.
 
 # Integration references
