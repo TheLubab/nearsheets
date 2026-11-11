@@ -8,6 +8,7 @@ import type { DocumentRepository } from "../features/documents/repository/docume
 import { WorkbookEditor } from "../features/spreadsheet/components/WorkbookEditor";
 import type { WorkbookSession } from "../features/spreadsheet/univer/create-workbook-session";
 import type { TreasuryMetadata } from "../features/documents/model/document-envelope";
+import { DraftReview } from "../features/treasury/components/DraftReview";
 
 /** Treasury context recorded with new documents. No treasury is connected yet. */
 const treasury: TreasuryMetadata = {
@@ -90,24 +91,33 @@ export function App() {
       <DocumentBar workspace={workspace} state={state} />
 
       <main className="app-shell__main">
-        {state.status === "ready" && state.document ? (
-          <WorkbookEditor
-            key={state.document.documentId}
-            documentId={state.document.documentId}
-            initialWorkbook={state.document.workbook}
-            onSessionReady={handleSessionReady}
-          />
-        ) : (
-          <div className="workbook-status" aria-live="polite">
-            {state.status === "error" ? (
-              <p role="alert">
-                Local documents could not be opened. {state.notice?.message ?? ""}
-              </p>
-            ) : (
-              <p>Opening your documents…</p>
-            )}
-          </div>
-        )}
+        <div className="app-shell__workspace">
+          {state.status === "ready" && state.document ? (
+            <WorkbookEditor
+              key={state.document.documentId}
+              documentId={state.document.documentId}
+              initialWorkbook={state.document.workbook}
+              onSessionReady={handleSessionReady}
+            />
+          ) : (
+            <div className="workbook-status" aria-live="polite">
+              {state.status === "error" ? (
+                <p role="alert">
+                  Local documents could not be opened. {state.notice?.message ?? ""}
+                </p>
+              ) : (
+                <p>Opening your documents…</p>
+              )}
+            </div>
+          )}
+          {state.status === "ready" && state.document ? (
+            <DraftReview
+              key={state.document.documentId}
+              getSession={() => workspace.getSession()}
+              treasury={state.document.treasury}
+            />
+          ) : null}
+        </div>
       </main>
     </div>
   );

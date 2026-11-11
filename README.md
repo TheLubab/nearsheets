@@ -4,7 +4,7 @@ A spreadsheet interface for community finances on NEAR, connected to Trezu and S
 
 ## Current state
 
-The repository contains a working React + TypeScript + Vite application with an embedded Univer Sheets editor. Multiple sheets, user-written formulas, cross-sheet references, formatting, range selection, copy/paste and undo/redo work locally, with no wallet or treasury connection. Documents are saved automatically to IndexedDB and can be exported or imported as lossless JSON; CSV is available as a values-only interchange format. Selection and lifecycle decisions are in [technical decisions](docs/decisions.md); status and next tasks are in [implementation](docs/implementation.md).
+The repository contains a working React + TypeScript + Vite application with an embedded Univer Sheets editor. Multiple sheets, user-written formulas, cross-sheet references, formatting, range selection, copy/paste and undo/redo work locally, with no wallet or treasury connection. A described custom-function catalog (`TREZU_AMOUNT`, `TREZU_ACCOUNT`, `TREZU_REFERENCE`, `TREZU_DRAFT`, `TREZU_SUM_REF`, `TREZU_MISSING`) turns payment rows into typed action drafts with stable ids; a read-only "Check payments" panel validates them. Formulas never sign or submit. Documents are saved automatically to IndexedDB and can be exported or imported as lossless JSON; CSV is available as a values-only interchange format. Selection and lifecycle decisions are in [technical decisions](docs/decisions.md); status and next tasks are in [implementation](docs/implementation.md).
 
 ## Development environment
 
@@ -35,7 +35,11 @@ src/
       components/         React UI around the editor
       model/              Workbook content and document types
       univer/             Univer engine and session lifecycle adapter
-    treasury/             Proposal preparation and reconciliation
+    treasury/             Payment drafts, custom formulas and review
+      application/        Payment row extraction and draft collection
+      components/         Read-only draft review panel
+      formulas/           Custom-function catalog and asset lookup
+      model/              Action drafts, exact amounts, account validation
   integrations/
     near/                 NEAR network and contract adapters
     trezu/                Trezu and Sputnik integration adapters

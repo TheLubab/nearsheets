@@ -115,6 +115,12 @@ export interface DocumentWorkspace {
    * Returns a detach function for teardown.
    */
   attachSession(session: WorkbookSession, documentId: string): () => void;
+  /**
+   * The attached editor, or `null` before it is ready. Exposed for read-only
+   * features such as the payment draft review; writing still goes through the
+   * editor's own commands.
+   */
+  getSession(): WorkbookSession | null;
   /** Flushes unsaved edits before the editor is replaced or unloaded. */
   flush(): Promise<void>;
   createNewDocument(): Promise<void>;
@@ -457,6 +463,7 @@ export function createDocumentWorkspace(
     },
     start,
     attachSession,
+    getSession: () => session,
     flush: async () => {
       await persistence?.saveNow();
     },

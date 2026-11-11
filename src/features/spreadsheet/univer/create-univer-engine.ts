@@ -3,6 +3,9 @@ import type { IDisposable, IWorkbookData, Univer } from "@univerjs/core";
 import { LocaleType, createUniver, mergeLocales } from "@univerjs/presets";
 import { UniverSheetsCorePreset } from "@univerjs/preset-sheets-core";
 import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
+import {
+  createCustomFunctionCatalog,
+} from "../../treasury/formulas/custom-functions";
 import "@univerjs/sheets/facade";
 import "@univerjs/preset-sheets-core/lib/index.css";
 
@@ -50,10 +53,18 @@ export function createUniverEngine(
   mountElement.style.height = "100%";
   options.container.append(mountElement);
 
+  // Custom functions are registered through the preset so the formula engine
+  // knows them before the first calculation. Registration must not run any
+  // lookup: these are pure calculations.
+  const customFunctions = createCustomFunctionCatalog();
+
   const { univer, univerAPI } = createUniver({
     locale: LocaleType.EN_US,
     locales: {
-      [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS),
+      [LocaleType.EN_US]: mergeLocales(
+        UniverPresetSheetsCoreEnUS,
+        customFunctions.localeContent,
+      ),
     },
     presets: [
       UniverSheetsCorePreset({
@@ -61,6 +72,10 @@ export function createUniverEngine(
         header: true,
         toolbar: true,
         footer: { sheetBar: true, statisticBar: true, zoomSlider: true },
+        formula: {
+          function: customFunctions.functions,
+          description: customFunctions.descriptions,
+        },
       }),
     ],
   });

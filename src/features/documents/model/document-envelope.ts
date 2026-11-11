@@ -18,11 +18,12 @@ export const SCHEMA_VERSION = 1;
 /**
  * Version of the custom-function catalog the workbook was calculated with.
  *
- * Custom functions are not implemented yet; the field exists so a later release
- * can tell that a document was authored against a different catalog and may
- * need recalculation or an explanation for missing functions.
+ * The catalog itself lives in `src/features/treasury/formulas/custom-functions.ts`;
+ * only its version is imported here, so document validation does not pull the
+ * formula engine into storage and import code.
  */
-export const FUNCTION_CATALOG_VERSION = 1;
+import { FUNCTION_CATALOG_VERSION } from "../../treasury/model/function-catalog-version";
+export { FUNCTION_CATALOG_VERSION };
 
 /** Univer release this application pins; recorded for diagnostics. */
 export const UNIVER_ENGINE_VERSION = "1.4.0";

@@ -92,6 +92,105 @@ body {
   padding-top: 0;
 }
 
+/*
+ * Editor plus the draft review panel. The panel is a fixed-height strip so the
+ * spreadsheet keeps the remaining space instead of being squeezed by results.
+ */
+.app-shell__workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.draft-review {
+  flex: none;
+  max-height: 40%;
+  overflow: auto;
+  padding: 8px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  font-size: 0.82rem;
+}
+
+.draft-review__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.draft-review__label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.draft-review__bar button {
+  padding: 4px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-background);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.draft-review__bar button:hover {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+}
+
+.draft-review__hint,
+.draft-review__problem,
+.draft-review__count {
+  margin: 6px 0 0;
+  color: var(--app-muted);
+}
+
+.draft-review__problem {
+  color: #8a1c27;
+}
+
+.draft-review__list,
+.draft-review__issues {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.draft-review__list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.draft-review__ref {
+  min-width: 8ch;
+  font-weight: 600;
+}
+
+.draft-review__kind {
+  color: var(--app-muted);
+}
+
+.draft-review__asset {
+  color: var(--app-muted);
+  font-style: italic;
+}
+
+.draft-review__asset--error {
+  color: #8a1c27;
+  font-style: normal;
+}
+
+.draft-review__issues li {
+  color: #8a1c27;
+  padding: 1px 0;
+}
+
 .document-bar {
   position: relative;
   display: flex;

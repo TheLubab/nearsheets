@@ -91,7 +91,11 @@ describe("native JSON round trip", () => {
       return;
     }
     expect(restored.document.treasury).toEqual(original.treasury);
-    expect(restored.document.workbook.sheetOrder).toEqual(["sheet-budget", "sheet-summary"]);
+    expect(restored.document.workbook.sheetOrder).toEqual([
+      "sheet-budget",
+      "sheet-summary",
+      "sheet-payments",
+    ]);
     // Formulas stay formulas, not baked values.
     expect(
       restored.document.workbook.sheets["sheet-budget"]?.cellData?.[7]?.[2]?.f,

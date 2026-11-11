@@ -61,6 +61,16 @@ Keep exact token quantities as decimal strings or integer base units at the tran
 
 These are implementation requirements, not claims that every interaction is automatically supplied by Univer.
 
+Implementation notes (2026-11-11): the catalog is `src/features/treasury/formulas/custom-functions.ts` (version 2, recorded on the envelope through `function-catalog-version.ts`). Functions are registered through the preset's `formula.function`/`formula.description` options at engine creation. `TREZU_AMOUNT` returns a number after validating precision, so results can still be summed; it rejects meaningful over-precision rather than rounding silently. `TREZU_DRAFT` and `draftId` must agree on the exact hash input (`kind|network|treasuryAccountId|reference`); a test enforces that.
+
+Draft identity is content-derived, never positional: `draft_` plus a 64-bit FNV-1a over the action kind, network, treasury account and the row's author-supplied reference. Sheet name and row number are excluded, so sorting or inserting rows cannot reassign a payment. Formula code cannot import the model layer, so the hash is duplicated in `TREZU_DRAFT` and checked for agreement. Duplicate references within a document are reported, not merged.
+
+Native NEAR (`assetId: "near"`) is the only asset whose precision (24) may be assumed. Every other asset requires an explicit decimals column; otherwise the row is an issue. A non-NEAR asset produces an `intents-delivery` draft at stage `planned` with all quote fields `null`: no quote, provider or fee is invented before one is requested.
+
+Amount parsing accepts binary floating-point noise (relative `1e-9`) and rejects meaningful excess precision unless rounding is explicitly requested. Base units are constructed from the decimal string, never from a float.
+
+The asynchronous asset lookup provides deduplication, TTL caching, explicit refresh, stale-reply rejection and visible loading/error state; it performs no I/O itself and the default static source knows only native NEAR. An unknown asset resolves to `null` instead of a guessed precision.
+
 ## Persistence and future migration
 
 Use Dexie/IndexedDB behind an asynchronous document repository interface. Keep persistence out of React components and formula implementations. A later remote repository can replace the storage adapter without changing the sheet UI.

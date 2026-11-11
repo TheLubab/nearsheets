@@ -11,12 +11,12 @@ This file is a task map for agents, not a manual service setup guide. Read the c
 - `src/features/spreadsheet/univer/create-univer-engine.ts`: the only module aware of Univer preset and container setup. Mounts one editor into a dedicated wrapper element and exposes lifecycle probes.
 - `src/features/spreadsheet/univer/create-workbook-session.ts`: application-facing session (`getWorkbook`, `saveSnapshot`, `whenReady`, `dispose`). Owns readiness, idempotent teardown and deferred engine disposal. Engine creation is injectable for tests.
 - `src/features/spreadsheet/components/WorkbookEditor.tsx`: mounts and disposes exactly one session per effect, with a loading/error overlay. Safe under React Strict Mode: the first development-only mount is torn down before the second mount paints.
-- `src/features/spreadsheet/model/starter-workbook.ts`: a typed starter workbook with two sheets, formulas, number formats, header styling and a merged range. It is plain spreadsheet content and has no treasury side effects.
+- `src/features/spreadsheet/model/starter-workbook.ts`: a typed starter workbook with three sheets (Budget, Summary, Payments), formulas, number formats, header styling and merged ranges. The Payments sheet uses formulas for draft ids and a missing-field count. It is plain spreadsheet content and has no treasury side effects.
 - `src/app/App.tsx`, `src/app/main.tsx`, `src/app/global.css`: application shell, `StrictMode` root and full-height layout. The header shows the validated NEAR network from `src/config/env.ts`.
 
 Verified behavior (Chromium, against the development server, then removed from the repository):
 
-- Two sheets load with all formulas recalculated (`=SUM(C4:C6)` → 95, cross-sheet `=Budget!C8` → 95).
+- Two sheets load with all formulas recalculated (`=SUM(C4:C6)` → 95, cross-sheet `=Budget!C8` → 95). The Payments sheet was added in milestone 3 and has not been browser-verified.
 - Editing a referenced cell recalculates dependants on both sheets; undo restores the previous total and redo reapplies it.
 - Range selection, `save()` snapshots, and restore into a fresh session preserve formulas, styles (bold, number format) and sheet order.
 - Strict Mode leaves exactly one editor mounted and logs no React or Univer errors.
@@ -50,7 +50,21 @@ Verified by tests: JSON round trip keeps formulas, number formats, merges and sh
 
 Earlier foundation notes continue below.
 
-Not implemented yet: custom treasury formulas, action drafts, wallet UI, treasury reads, proposal submission, and Intents execution. Installed dependencies now cover the workbook shell, environment validation, NEAR connection/RPC, Dexie persistence and `fake-indexeddb` tests; TanStack Query and `decimal.js` are not installed yet.
+### Milestone 3: custom formulas and action drafts (complete)
+
+- `src/features/treasury/model/exact-amount.ts`: exact amount conversion. Base units are built from a decimal string, never from floating-point arithmetic. Double representation noise is accepted, meaningful excess precision is rejected unless `mode: "round"` is explicit, and precision above 24 decimals is refused rather than guessed.
+- `src/features/treasury/model/near-account.ts`: syntactic NEAR account id check (named and 64-hex implicit accounts). It does not prove the account exists or can receive funds.
+- `src/features/treasury/model/action-draft.ts`: `ActionDraft` types, Intents staging, `draftId`/`draftIdFromParts` (64-bit FNV-1a over kind, network, treasury account and reference), `draftFromRow` validation, and `validateActionDraft` for untrusted drafts. Native NEAR (`assetId: "near"`) is a transfer; any other asset is an Intents delivery starting at stage `planned` with no invented quote. Non-NEAR assets require explicit precision.
+- `src/features/treasury/model/function-catalog-version.ts`: the catalog version value (2) in a dependency-free module, so document validation does not import the formula engine.
+- `src/features/treasury/formulas/custom-functions.ts`: the described catalog `TREZU_AMOUNT`, `TREZU_ACCOUNT`, `TREZU_REFERENCE`, `TREZU_DRAFT`, `TREZU_SUM_REF`, `TREZU_MISSING`. Each is a pure calculation: no network, signing, submission or document mutation. Function classes return Univer value objects, propagate argument errors, and are registered through the preset's `formula.function`/`formula.description` options.
+- `src/features/treasury/formulas/asset-lookup.ts`: asynchronous asset metadata with request deduplication, TTL caching, explicit refresh, stale-reply rejection, `loading`/`ready`/`error` states and disposal. `createStaticAssetSource` knows only native NEAR offline; unknown assets resolve to `null` rather than a guessed precision.
+- `src/features/treasury/application/collect-drafts.ts`: reads the Payments sheet by header text (so columns can move), skips blank padding rows, validates each row and reports duplicate references instead of merging identities. A blank Asset cell means native NEAR. Until a document treasury account is selected, the sheet's Treasury cell is used, so the panel's ids match the sheet's `TREZU_DRAFT` formulas.
+- `src/features/treasury/components/DraftReview.tsx`: read-only "Check payments" panel. It never writes, signs or submits.
+- `src/features/spreadsheet/univer/create-univer-engine.ts`: registers the catalog at engine creation. `src/features/documents/application/document-workspace.ts` exposes `getSession()` for read-only features.
+
+Verified by tests: exact base units resist double noise; over-precision is refused instead of silently rounded; draft ids stay stable across moves and are shared by the model and `TREZU_DRAFT`; duplicate references are reported; Intents drafts start unquoted; unknown assets never produce a guessed precision; concurrent lookups deduplicate and stale replies cannot overwrite newer ones; every custom function runs without I/O; the document envelope records catalog version 2 and round trips the three-sheet starter.
+
+Not implemented yet: wallet UI, treasury reads, proposal submission, and Intents execution. Installed dependencies now cover the workbook shell, environment validation, NEAR connection/RPC, Dexie persistence, `decimal.js` exact amounts and `fake-indexeddb` tests; TanStack Query is not installed yet.
 
 ## Tasks in dependency order
 
@@ -58,7 +72,7 @@ Implement only the task authorized by the user. Each item should remain reviewab
 
 1. ~~**Workbook shell.**~~ Done above.
 2. ~~**Local documents.**~~ Done above.
-3. **Custom formulas and action drafts.** Register described custom functions and produce typed action drafts with stable IDs. Add validation and asynchronous lookup states. Done when recalculation creates no signing or submission side effects. References: `univer.md`; decisions sections on formulas and exact amounts.
+3. ~~**Custom formulas and action drafts.**~~ Done above.
 4. **Wallet UI and treasury reads.** Consume existing factories through a shared React provider. Add mocked policy/proposal/balance reads, network selection and permission display. Optional configured endpoints must have a real adapter before showing as available. Done when missing optional configuration allows local use and wallet cancellation is recoverable. References: `wallets.md`, `near.md`, `sputnik.md`, `trezu.md`.
 5. **Proposal actions.** Preview and submit one proposal per payment row; add approve/reject with policy checks. Reconcile transaction outcomes and proposal status. Done when a retry cannot silently duplicate a known submission and approval is distinct from payment completion. Test with mocks.
 6. **Intents execution design and adapter.** Keep route/quote/stage fields in draft schemas from task 3 onward. Before implementing execution, resolve the quote-expiry-versus-DAO-approval design using upstream Trezu and Intents sources. Ask the user if requirements conflict. Then implement selected routes, deposits, settlement and refunds using mocks. This dependency order does not defer Intents out of the product. References: `near-intents.md`, `trezu.md`, `sputnik.md`.
