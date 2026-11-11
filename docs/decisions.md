@@ -1,6 +1,6 @@
 # Technical decisions
 
-Recorded: 2026-11-11. Status: user-selected direction; environment validation and NEAR connection factories are implemented. Application features remain unimplemented; see [implementation status](implementation.md).
+Recorded: 2026-11-11. Status: user-selected direction. Environment validation, NEAR connection factories and the spreadsheet workbook shell are implemented; see [implementation status](implementation.md).
 
 ## How decisions evolve
 
@@ -14,7 +14,7 @@ These decisions are subject to change as context is gathered and agents suggest 
 - Local drafts and file export/import first, with a path to remote storage later.
 - Node.js 24 and pnpm remain the development environment.
 
-Package versions, styling system, and any future Excel conversion library remain unselected. Reference snapshots do not select package versions. Pin a compatible released Univer package set together when implementation starts.
+Package versions, styling system, and any future Excel conversion library remain unselected. Reference snapshots do not select package versions. The workbook shell pins `@univerjs/*` to the 1.4.0 release line, using open-source presets only.
 
 ## Treasury, wallets, and cross-chain scope
 

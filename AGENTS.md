@@ -5,7 +5,7 @@
 3. Search only the relevant reference bundle for the API you need. Do not load all reference bundles into context.
 4. Implement one small behavior, run its relevant checks, and report what works and what remains.
 
-Use `pnpm typecheck` and targeted tests such as `pnpm exec vitest run tests/env.test.ts`. There is no runnable application or build command yet.
+Use `pnpm typecheck`, `pnpm build` and targeted tests such as `pnpm exec vitest run tests/env.test.ts`.
 
 # Testing and development servers
 
