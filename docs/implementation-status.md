@@ -1,0 +1,39 @@
+# NearSheets implementation status
+
+Reviewed against the working tree on 2026-11-11. This describes implemented code and the evidence available in this session, not a released/deployed build or acceptance sign-off. The [refactor brief](nearsheets-refactor.md) remains the governing milestone; [decisions](decisions.md) records scope and user choices.
+
+## Implemented behavior and evidence
+
+| Area | Implemented | Evidence / limits |
+| --- | --- | --- |
+| Spreadsheet | Blank arbitrary workbooks, native ribbon/formula bar, Blockchain dropdowns, guided insertion, footer view controls | `src/features/spreadsheet/`; ribbon, footer and session tests. File stays in the user's ribbon tab row. Browser interaction/visual acceptance remains pending. |
+| Reads | Native/token balances, exact decimal-text variants, generic contract views, first 100 Sputnik proposals, query cache and explicit refresh | `src/features/table/runtime.ts`; table-runtime and balance-format tests. Numeric balances remain approximate. Proposal pagination is not implemented. |
+| Formatting | Grouped balances, six-place display, dust threshold, user overrides and persisted ownership | `src/features/spreadsheet/univer/balance-format.ts`; real Univer save/reopen and undo checks in balance-format tests. Older explicit formats are preserved. |
+| Inspection | Selected-cell formulas/raw values, exact action fields, readable balance read details and timestamps | `selection.ts`, `TableActions.tsx`, `ReadDetails.tsx`; sparse selection tests. At most 30 selected cell details are displayed; workbook reads remain a separate unfiltered section. |
+| Drafts | Transfers, votes, contract calls, compatible pool staking and DAO-funded Intents swaps | Readable labels resolve to structured runtime descriptors; fields are available through `NS_FIELD`. Signatures and restrictions are in [the formula catalog](functions.md). |
+| Review/execution | Permission checks, exact preview, separate wallet requests, stale-plan checks, persist-before-sign, duplicate-attempt protections, transaction reconciliation | `src/features/table/execution.ts`; mocked runtime/wallet tests. Confirmed proposal creation is not completed governance execution or payment. Token-weighted role membership is not resolved by the current review permission check. |
+| Intents | Public asset catalog, dry estimates, explicit deposit preparation, quote expiry, refund destination binding and provider status reads | `src/integrations/intents/one-click.ts`; mocked Intents route tests. Mainnet NEAR FT funding only; supported validators and limits are documented in README. |
+| Documents | Local save/list/open, rename, schema migrations, JSON/CSV import/export, export despite storage failure | `src/features/documents/`; persistence, envelope, CSV and repository tests exist. Runtime draft/read resources are saved but not hydrated into a new runtime; recalculation is required. |
+| Wallet/auth | Sign In dialog for NEAR wallet selection, restoration, connect/disconnect, network changes and optional cookie-session auth boundary | Known Ledger, EVM, WalletConnect and passkey manifest entries are excluded; injected/custom wallets may differ. Wallet and auth-session tests use mocks. Connecting a wallet does not establish an app session. Visual verification is pending; no live backend compatibility claim. |
+| Feedback | Scoped delayed startup toasts and longer-calculation feedback with Stop | `src/components/ui/toast.ts`, `calculation-feedback.ts`; feedback and toast-scope tests exist. Persistent errors remain in controls/dialogs. |
+| Errors | Cell-specific blockchain/helper diagnostics enrich Univer's native selected-cell alert; Inspect expands technical details; argument validation, review and wallet outcomes provide recovery guidance | `problems.ts`, `cell-diagnostics.ts`, `table-functions.ts`, `cell-error-alerts.ts`; real formula-engine tests cover correction, identical formulas in different cells/sheets, stale replies, error propagation, `IFERROR`, and exact-text results. Alert service behavior is tested with a mock; actual popup appearance remains pending user inspection. Ordinary dependent formulas retain Univer's generic explanation. |
+| Typography | Locally bundled Inter Variable for application chrome, with larger compact control labels and tabular save times | `src/app/main.tsx`, `src/app/global.css`. Univer owns workbook cell fonts; visual review at narrow widths remains pending. |
+
+## Verification record
+
+The most recent implementation checks in this session passed `pnpm typecheck`, `pnpm build`, and 31 focused tests across balance-format, table-runtime, table-selection, Intents route and blockchain-ribbon files. Other existing test files are named above as coverage locations; this is not a claim that the full suite was rerun during the documentation audit. Build output included browser externalization and large-chunk warnings; those are not proof of runtime failure or of production readiness.
+
+The error-handling update passed type checking, a production build and 44 focused tests across cell-errors, Intents errors, table-runtime, table-selection, Intents routes, custom-function engine and balance-format files. This includes real Univer calculations with mocked external services, not a browser or live-chain workflow. The native alert enrichment depends on the formula-alert key verified in pinned Univer 1.4.0; revisit that adapter on upgrades.
+
+The user has confirmed the visible numeric balance and Number dropdown behavior in the running table. That limited feedback does not establish overall UI acceptance. No live-chain submission or end-to-end wallet/contract workflow was performed for these changes. Verify the new error popup and correction flow visually in the running UI.
+
+## Acceptance still outstanding
+
+- Exercise one continuous blank-workbook workflow: read → calculate → exact draft → review → wallet result → save/reopen → receipt reconciliation. Existing focused tests do not establish the entire browser flow.
+- Verify keyboard editing, autocomplete, formula spills/collisions, clipboard, sheet/row moves, multi-range selection, undo/redo, dialog focus and narrow layouts in the actual UI.
+- Validate real wallet/deployed Sputnik compatibility through a separately authorized controlled testnet workflow. Intents has no testnet route; live mainnet verification requires separate explicit authorization.
+- Restore saved read/draft runtime resources without relying on a new network recalculation, and verify offline reopening and exact source evidence retention.
+- Complete the governance/provider lifecycle acceptance scenarios, including delayed approvals, expiry, settlement and refund. Current generic status functions do not automatically derive every downstream DAO execution state.
+- Review remaining brief requirements against the implementation before milestone sign-off. General contract calls, tested helper utilities or a passing build do not establish every route as supported.
+
+XLSX, remote document storage and a separate app-login backend are deferred or outside the selected current workflow. Unsupported Intents routes and unresolved token-weighted permission checks are implementation limits, not completed capabilities. This page records current status; it does not replace or reduce the milestone's acceptance requirements.

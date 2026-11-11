@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '../components/ui/dialog';
-import { Wallet } from 'lucide-react';
+import { Toaster } from '../components/ui/sonner';
+import { loadingToast, TOAST_IDS } from '../components/ui/toast';
+import { WalletIcon } from '@solar-icons/react/linear/wallet';
 import { env } from '../config/env';
 import { createDocumentWorkspace } from '../features/documents/application/document-workspace';
 import { useWorkspaceState } from '../features/documents/application/use-workspace-state';
@@ -44,18 +46,31 @@ export function App() {
     const runtime = workspace.getSession()?.tableRuntime;
     if (runtime && state.document) runtime.executions = state.document.executions;
   }, [workspace,state.document]);
+  useEffect(() => {
+    // Document loading is a toast, not a centred placeholder. A fatal error
+    // still renders in the canvas because there is nothing else to show.
+    if (state.status !== 'loading') {
+      return;
+    }
+    return loadingToast(TOAST_IDS.documents, 'Opening documents…');
+  }, [state.status]);
   return <div className="app-shell">
     <TableActions key={state.document?.documentId} workspace={workspace} wallet={wallet} activeSession={activeSession}>
     <header className="app-shell__header">
       <h1 className="brand" title="NearSheets"><img className="brand__mark" src={`${import.meta.env.BASE_URL}near-sheets-mark.svg`} width={32} height={27} alt=""/><span>NearSheets</span></h1>
-      <DocumentBar workspace={workspace} state={state}/>
-      <button className="account-control" onClick={()=>setAccountOpen(true)}><Wallet size={15}/>{walletState.connection?.accountId ?? 'Connect wallet'}</button>
-      <Dialog open={accountOpen} onOpenChange={setAccountOpen} title="Account" description="Connect a wallet to sign reviewed actions. You can read data and edit local workbooks without connecting."><WalletPanel wallet={wallet} state={walletState}/></Dialog>
+      <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document}/>
+      <button type="button" className={`account-control ${walletState.connection ? 'account-control--connected' : 'account-control--connect'}`} onClick={()=>setAccountOpen(true)} aria-label={walletState.connection ? `Wallet account ${walletState.connection.accountId}` : 'Sign In'} title={walletState.connection?.accountId}>
+        {walletState.connection ? <WalletIcon size={16} aria-hidden="true"/> : null}
+        <span>{walletState.connection?.accountId ?? (walletState.status === 'connecting' ? 'Connecting…' : 'Sign In')}</span>
+        {walletState.connection ? <span className="account-control__status" aria-hidden="true"/> : null}
+      </button>
+      <Dialog className="account-dialog" open={accountOpen} onOpenChange={setAccountOpen} title={walletState.connection ? 'Your account' : 'Continue with'} showClose={false}><WalletPanel wallet={wallet} state={walletState}/></Dialog>
     </header>
     <main className="app-shell__main">
-      {state.status === 'ready' && state.document ? <WorkbookEditor key={state.document.documentId} documentId={state.document.documentId} initialWorkbook={state.document.workbook} executions={state.document.executions} onSessionReady={(session,id)=>{workspace.attachSession(session,id);setReadyEditor({documentId:id,session});}}/> :
-        <div className="workbook-status" role="status">{state.status === 'error' ? state.notice?.message : 'Opening documents…'}</div>}
+      {state.status === 'ready' && state.document ? <WorkbookEditor key={state.document.documentId} documentId={state.document.documentId} initialWorkbook={state.document.workbook} executions={state.document.executions} onSessionReady={(session,id)=>{workspace.attachSession(session,id);setReadyEditor({documentId:id,session});}}/> : null}
+      {state.status === 'error' ? <div className="workbook-status" role="alert">{state.notice?.message ?? 'Documents could not be opened.'}</div> : null}
     </main>
     </TableActions>
+    <Toaster/>
   </div>;
 }

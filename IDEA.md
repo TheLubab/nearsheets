@@ -20,4 +20,4 @@ NearSheets is this product. NEAR is the chain. Sputnik contracts enforce DAO cus
 
 Formulas calculate, query and prepare. Only explicit execution requests authorize wallet signing or submission. Professional spreadsheet UX and a polished, consistent interface are required.
 
-See [decisions](docs/decisions.md) and the [single refactor brief](docs/nearsheets-refactor.md) for implementation requirements.
+This document describes product intent. See [decisions](docs/decisions.md) and the [single refactor brief](docs/nearsheets-refactor.md) for requirements; [implementation status](docs/implementation-status.md) distinguishes current code from pending acceptance, and [the formula catalog](docs/functions.md) lists the implemented signatures.

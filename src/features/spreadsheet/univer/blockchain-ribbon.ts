@@ -13,7 +13,7 @@ import { IMenuManagerService, MenuItemType, IconManager } from '@univerjs/preset
 import type { MenuSchemaType } from '@univerjs/preset-sheets-core';
 
 export const BLOCKCHAIN_CATEGORIES = [
-  {key:'accounts',title:'Balances',entries:[['NEAR_BALANCE','NEAR_BALANCE'],['FT_BALANCE','FT_BALANCE']]},
+  {key:'accounts',title:'Balances',entries:[['NEAR_BALANCE','NEAR_BALANCE'],['FT_BALANCE','FT_BALANCE'],['NEAR_BALANCE_EXACT','NEAR_BALANCE_EXACT'],['FT_BALANCE_EXACT','FT_BALANCE_EXACT']]},
   {key:'dao',title:'DAO proposals',entries:[['SPUTNIK_PROPOSALS','SPUTNIK_PROPOSALS'],['SPUTNIK_TRANSFER','SPUTNIK_TRANSFER'],['SPUTNIK_VOTE','SPUTNIK_VOTE']]},
   {key:'swaps',title:'Cross-chain swaps',entries:[['INTENTS_QUOTE','INTENTS_QUOTE'],['INTENTS_SWAP','INTENTS_SWAP']]},
   {key:'contracts',title:'Contracts & staking',entries:[['NEAR_VIEW','NEAR_VIEW'],['SPUTNIK_CALL','SPUTNIK_CALL'],['SPUTNIK_STAKE','SPUTNIK_STAKE']]},

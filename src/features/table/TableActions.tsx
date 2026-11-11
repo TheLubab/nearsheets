@@ -3,20 +3,24 @@ import type { ReactNode } from 'react';
 import { BLOCKCHAIN_TOOLS,ribbonCommandId } from '../spreadsheet/univer/blockchain-ribbon';
 import type { WorkbookSession } from '../spreadsheet/univer/create-workbook-session';
 import { getTableSelection } from './selection';
+import { ReadDetails } from './ReadDetails';
 import { FunctionArguments, functionHelp } from './FunctionArguments';
 import type { FRange } from '@univerjs/sheets/facade';
 import { Dialog } from '../../components/ui/dialog';
 import type { DocumentWorkspace } from '../documents/application/document-workspace';
 import type { WalletController } from '../wallet/application/wallet-controller';
-import { executePlan, reviewPlan, reconcileExecution } from './execution';
+import { executePlan, reviewPlan, reconcileExecution, executionProblem } from './execution';
 import type { ReviewedPlan } from './execution';
+import { toProblem } from './problems';
+import type { Problem } from './problems';
+import { ProblemNotice } from './ProblemNotice';
 
 export function TableActions({workspace,wallet,activeSession,children}:{workspace:DocumentWorkspace;wallet:WalletController;activeSession:WorkbookSession|null;children:ReactNode}) {
   const [help,setHelp] = useState(false);
   const [inspect,setInspect] = useState(false);
   const [owner,setOwner] = useState<string|null>(null);
   const [plan,setPlan] = useState<ReviewedPlan|null>(null);
-  const [error,setError] = useState<string|null>(null);
+  const [error,setError] = useState<Problem|null>(null);
   const [busy,setBusy] = useState(false);
   const [initialFunction,setInitialFunction]=useState('NEAR_BALANCE');
   const [insertTarget,setInsertTarget]=useState<FRange|null>(null);
@@ -47,7 +51,7 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
       for (const operation of operations) prepared.push(await runtime.prepare(operation));
       setPlan(reviewPlan(prepared,snapshot,wallet));
       setError(null);
-    } catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); }
+    } catch (cause) { setError(toProblem(cause)); }
     finally { setBusy(false); }
   };
   useEffect(()=>{
@@ -72,14 +76,28 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
   },[activeSession,busy,selection.ready,selection.operations.length,selection.calculating]);
   return <>
     {children}
-    <Dialog open={inspect} onOpenChange={setInspect} title="Cell data and receipts" description="Freshness belongs to the last successful read. Refresh to request current chain state. No transaction is signed by inspection or reconciliation.">
-      {[...(session()?.tableRuntime?.errors ?? [])].map(([name,message])=><p role="alert" key={name}>{name}: {message}</p>)}
-      {[...(session()?.tableRuntime?.evidence ?? [])].map(([key,read])=><details key={key}><summary>{read.network} · {read.fetchedAt} · {Date.now()-Date.parse(read.fetchedAt)>30000?'stale':'recent'}</summary><code>{key}</code><pre>{JSON.stringify(read.value,null,2)}</pre></details>)}
-      {Object.values(workspace.getState().document?.executions ?? {}).map(record=><section key={record.id}><p>{record.id}: {record.state}</p><p>{record.transactionHash ?? 'No transaction hash returned'}</p><button disabled={busy||!record.transactionHash} onClick={async()=>{
+    <Dialog open={inspect} onOpenChange={setInspect} title="Cell data and receipts" description="Balance cells use approximate spreadsheet numbers. Exact decimal amounts and base units are retained in the read details below. Refresh to request current chain state.">
+      <section aria-label="Selected cells">
+        <h3>Selected cells · {selection.label}</h3>
+        {selection.cells.length ? selection.cells.map(cell=><dl key={cell.address}>
+          <dt>Cell</dt><dd>{cell.address}</dd>
+          {cell.formula && <><dt>Formula</dt><dd><code>{cell.formula}</code></dd></>}
+          <dt>Underlying value</dt><dd>{String(cell.value ?? '')}</dd>
+          {cell.problems.map((problem,index)=><dd key={index}><ProblemNotice problem={problem}/></dd>)}
+          {cell.operation && <><dt>Exact action amount</dt><dd>{cell.operation.amount} {cell.operation.asset}</dd><dt>Base units</dt><dd>{cell.operation.baseUnits}</dd></>}
+        </dl>) : <p>No populated cells selected.</p>}
+        {selection.cellCount>selection.cells.length && <p>Showing the first {selection.cells.length} of {selection.cellCount} populated cells.</p>}
+      </section>
+      <details><summary>Workbook read details</summary>
+      {[...(session()?.tableRuntime?.evidence ?? [])].map(([key,read])=><ReadDetails key={key} readKey={key} read={read}/>)}
+      </details>
+      {Object.values(workspace.getState().document?.executions ?? {}).map(record=><section key={record.id}><p>{record.id}: {record.state}</p><p>{record.transactionHash ?? 'No transaction hash returned'}</p>
+      {executionProblem(record) && <ProblemNotice problem={executionProblem(record)!}/>}
+      <button disabled={busy||!record.transactionHash} onClick={async()=>{
         const current=session(),documentId=workspace.getState().document?.documentId;if(!current?.tableRuntime||!documentId)return;setBusy(true);
-        try{await workspace.recordExecution(await reconcileExecution(record,current.tableRuntime),documentId);current.tableRuntime.executions=workspace.getState().document?.executions ?? {};current.univerAPI.getFormula().executeCalculation();setError(null);}catch(cause){setError(cause instanceof Error?cause.message:String(cause));}finally{setBusy(false);}
+        try{await workspace.recordExecution(await reconcileExecution(record,current.tableRuntime),documentId);current.tableRuntime.executions=workspace.getState().document?.executions ?? {};current.univerAPI.getFormula().executeCalculation();setError(null);}catch(cause){setError(toProblem(cause));}finally{setBusy(false);}
       }}>Check transaction</button></section>)}
-      {error&&<p role="alert">{error}</p>}
+      {error&&<ProblemNotice problem={error}/>}
     </Dialog>
     <Dialog open={help} onOpenChange={setHelp} title={functionHelp[initialFunction]?.title ?? 'Insert a function'} description={`${functionHelp[initialFunction]?.description ?? 'Fill in the arguments and insert the formula.'} Use =A1 to reference a cell.`}>
       <FunctionArguments key={initialFunction} functionName={initialFunction} target={insertTarget?.getA1Notation()??'the selected cell'} onInsert={formula=>{insertTarget?.setValue({f:formula});setHelp(false);}}/>
@@ -94,7 +112,7 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
         </dl>{op.intents && <><p>1Click route {op.intents.providerId} · expires {op.intents.expiresAt}. Refunds return to {op.intents.input.refundTo}. Output: {op.intents.input.destinationAsset} on {op.intents.input.destinationChain}; slippage {op.intents.input.slippageTolerance} bps.</p><p>Expired quotes require a new proposal. Sputnik transfers do not enforce quote deadlines on chain; do not approve an expired deposit from another client.</p><details><summary>Exact quote, limits and route</summary><pre>{JSON.stringify(op.intents,null,2)}</pre></details></>}
         <details><summary>Actual contract call</summary><pre>{JSON.stringify(op.transaction,null,2)}</pre></details>
       </section>)}
-      {error && <p role="alert">{error}</p>}
+      {error && <ProblemNotice problem={error}/>}
       <button disabled={busy} onClick={async()=>{
         const current = session();if(!plan||!current?.tableRuntime)return;
         setBusy(true);setError(null);
@@ -102,11 +120,13 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
           await executePlan({plan,wallet,runtime:current.tableRuntime,snapshot:()=>current.saveSnapshot(),journal:()=>workspace.getState().document?.executions ?? {},record:record=>workspace.recordExecution(record,owner ?? undefined)});
           current.tableRuntime.executions = workspace.getState().document?.executions ?? {};
           current.univerAPI.getFormula().executeCalculation();
+          const unsuccessful=plan.operations.map(op=>current.tableRuntime!.executions[op.id]).find(record=>record && record.state!=='confirmed');
+          if(unsuccessful)setError(executionProblem(unsuccessful));
           setPlan(null);
-        } catch(cause){setError(cause instanceof Error ? cause.message : String(cause));}
+        } catch(cause){setError(toProblem(cause));}
         finally{setBusy(false);}
       }}>{busy ? 'Waiting for wallet…' : 'Sign reviewed actions'}</button>
     </Dialog>
-    {error&&!plan&&!inspect&&<Dialog open={Boolean(error)} onOpenChange={open=>{if(!open)setError(null);}} title="Selection needs attention" description="Select the cells containing the actions you want to review."><p role="alert">{error}</p></Dialog>}
+    {error&&!plan&&!inspect&&<Dialog open={Boolean(error)} onOpenChange={open=>{if(!open)setError(null);}} title="Operation needs attention" description="Resolve the issue below before continuing."><ProblemNotice problem={error}/></Dialog>}
   </>;
 }

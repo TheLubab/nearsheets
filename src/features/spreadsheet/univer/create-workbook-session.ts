@@ -90,7 +90,7 @@ export function createWorkbookSession(
       if (!snapshot) return null;
       const resources = (snapshot.resources ?? []).filter(item => item.name !== 'nearsheets.table');
       resources.push({name:'nearsheets.table',data:JSON.stringify({
-        operations:[...tableRuntime.operations], reads:[...tableRuntime.evidence], errors:[...tableRuntime.errors],
+        operations:[...tableRuntime.operations], reads:[...tableRuntime.evidence],
       })});
       return {...snapshot,resources};
     },

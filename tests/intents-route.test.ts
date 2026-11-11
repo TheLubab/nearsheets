@@ -19,6 +19,17 @@ function provider() {
  return {api:new OneClick('https://provider.invalid',request),request,requests};
 }
 describe('1Click estimation, explicit preparation and expiry',()=>{
+ it('shows exact readable token quantities alongside the original quote base units',async()=>{
+   const {api}=provider();
+   const runtime=new TableRuntime({view:async()=>null,balance:async()=> '0'},undefined,api);
+   const table=await runtime.calculate('INTENTS_QUOTE',[input.originAsset,input.destinationAsset,input.amount,input.destinationChain,input.recipient,input.refundTo,input.slippageTolerance]);
+   expect(table).toContainEqual(['Input amount','1.000001','wNEAR']);
+   expect(table).toContainEqual(['Output amount','2','USDC']);
+   expect(table).toContainEqual(['Minimum output','1.98','USDC']);
+   expect(table).toContainEqual(['Input base units','1000001','wNEAR']);
+   expect(table).toContainEqual(['Output asset','eth-usdc','eth']);
+   runtime.dispose();
+ });
  it('runs a DAO swap from a table descriptor through reviewed proposal and refund tracking',async()=>{
    const {api,requests}=provider();
    const policy={proposal_bond:'100',roles:[{kind:{Group:['signer.near']},permissions:['*:AddProposal']}]};

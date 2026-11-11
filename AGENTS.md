@@ -4,6 +4,7 @@
 2. Read `docs/decisions.md` for agreed technology and integration choices.
 3. Inspect current code and git status. Another agent may have uncommitted work. Do not discard or overwrite it blindly.
 4. Search only the relevant sections of `docs/references/`. Check the installed release's APIs before adopting upstream examples.
+5. Read `docs/implementation-status.md` for implemented behavior, known limits and pending acceptance; use `docs/functions.md` for the current catalog. Keep these and README current when behavior changes. The refactor brief is a requirement, not a completion report; pinned reference bundles retain their original provenance.
 
 # Product rules
 
@@ -12,6 +13,8 @@
 - Functions return useful data or structured action drafts. Calculation, refresh, import and undo never sign or submit. Explicit table execution opens an exact preview and wallet flow; outcomes return to the grid.
 - Follow Trezu's verified auth implementation through NEAR Connect, including authorization/session handling where applicable. See the authentication supplement in `docs/references/trezu.md`. Wallet connection alone is not backend authentication.
 - Use established UI components and patterns; prefer shadcn/ui for application controls and Univer for the spreadsheet. Keep the grid dominant, keyboard-friendly and visually coherent. Do not build a custom dashboard UI around the table.
+- Preserve the user's File button placement in the ribbon tab row. Documentation maintenance does not authorize moving it or changing the layout.
+- Use the existing toaster for transient operation feedback when useful (loading, completion, recoverable failures). Import the scoped `toast` / delayed `loadingToast` from `src/components/ui/toast.ts`, not directly from Sonner, to avoid duplicate notifications in Univer's toaster. Use stable IDs for ongoing work, dismiss on completion/disposal, and avoid flashes or routine recalculation spam. Keep persistent errors and required decisions at their relevant cell/control or in a dialog; do not rely on a toast alone.
 - Deliver the refactor as one comprehensive milestone. Internal steps and focused commits are fine; do not stop at a renamed UI, disconnected utilities, mock-only features or another partial milestone.
 
 # Engineering rules

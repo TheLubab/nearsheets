@@ -1,5 +1,6 @@
 import type { ExecutionJournal } from '../../table/execution';
 import { useEffect, useRef, useState } from "react";
+import { loadingToast, TOAST_IDS } from "../../../components/ui/toast";
 import type { WorkbookSnapshot } from "../model/workbook-snapshot";
 import type { WorkbookSession } from "../univer/create-workbook-session";
 import { createWorkbookSession } from "../univer/create-workbook-session";
@@ -60,6 +61,13 @@ export function WorkbookEditor({
     let active = true;
     let session: WorkbookSession | null = null;
 
+    // Startup progress is a toast, not a blocker over the grid. A short delay
+    // means an instant start shows nothing instead of blinking.
+    let finishStartupToast = loadingToast(
+      TOAST_IDS.engine,
+      "Starting spreadsheet engine…",
+    );
+
     try {
       session = createWorkbookSession({
         container: host,
@@ -70,23 +78,36 @@ export function WorkbookEditor({
             return;
           }
           setStatus("ready");
+          finishStartupToast();
           onSessionReadyRef.current?.(readySession, documentId);
         },
       });
     } catch (cause) {
       setStatus("failed");
       setError(cause instanceof Error ? cause.message : "The editor could not start.");
+      // The failure stays on the canvas; a toast would only repeat it.
+      finishStartupToast();
       return;
     }
 
     setStatus("starting");
     setError(null);
     // The lifecycle event resolves after the first paint; this also covers a
-    // stage that was already reached during construction.
-    void session.whenReady();
+    // stage that was already reached during construction. A rejection (for
+    // example from the ready callback) must not leave the loading toast up.
+    void session.whenReady().catch((cause: unknown) => {
+      if (!active) {
+        return;
+      }
+      setStatus("failed");
+      setError(cause instanceof Error ? cause.message : "The editor could not start.");
+      finishStartupToast();
+    });
 
     return () => {
       active = false;
+      // A replaced editor must not leave its startup toast behind.
+      finishStartupToast();
       session?.dispose();
     };
     // `documentId` is the identity of the open document. A new document must
@@ -101,14 +122,11 @@ export function WorkbookEditor({
         // Univer manages everything inside this element.
         role="application"
         aria-label="Spreadsheet"
+        aria-busy={status === "starting"}
       />
-      {status !== "ready" ? (
-        <div className="workbook-editor__overlay" aria-live="polite">
-          {status === "failed" ? (
-            <p role="alert">{error ?? "The spreadsheet editor is unavailable."}</p>
-          ) : (
-            <p>Starting spreadsheet engine…</p>
-          )}
+      {status === "failed" ? (
+        <div className="workbook-editor__failure" role="alert">
+          <p>{error ?? "The spreadsheet editor is unavailable."}</p>
         </div>
       ) : null}
     </div>

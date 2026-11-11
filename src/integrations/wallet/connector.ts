@@ -13,6 +13,9 @@ export async function createWalletConnector(config: AppEnv = env, network?: Near
   return new NearConnector({
     network: network ?? config.VITE_NEAR_NETWORK,
     autoConnect: false,
+    // Keep the selector focused on NEAR wallets for this version. These are
+    // the dedicated alternative flows in the connector's manifest.
+    excludedWallets: ["ledger", "ethereum-wallets", "wallet-connect", "passkey"],
     ...(config.VITE_WALLET_MANIFEST_URL
       ? { manifest: config.VITE_WALLET_MANIFEST_URL }
       : {}),

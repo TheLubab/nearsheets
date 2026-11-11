@@ -8,15 +8,12 @@ import type { NearNetwork } from '../../integrations/near/network';
 import { createNearProvider } from '../../integrations/near/client';
 import { amountFromBaseUnits, parseExactAmount } from '../treasury/model/exact-amount';
 import { checkNearAccountId } from '../treasury/model/near-account';
+import { CellDiagnostics } from './cell-diagnostics';
+import { invalidInput, readProblem, unavailable, staleData } from './problems';
 import type { WalletTransaction } from '../../integrations/wallet/gateway';
 
 export type CellValue = string | number | boolean | null;
 export type TableResult = CellValue | CellValue[][];
-/** Univer's facade parses numeric-looking strings unless explicitly quoted. */
-export function formulaResult(value: TableResult): TableResult {
-  const encode = (cell:CellValue):CellValue => typeof cell === 'string' ? '"' + cell.replaceAll('"','""') + '"' : cell;
-  return Array.isArray(value) ? value.map(row=>row.map(encode)) : encode(value);
-}
 export interface Operation {
   id: string;
   revision: string;
@@ -48,19 +45,25 @@ const networkSchema = z.enum(['mainnet', 'testnet']);
 const metadataSchema = z.object({spec: z.literal('ft-1.0.0'), name: z.string(), symbol: z.string().min(1), decimals: z.number().int().min(0).max(24)});
 const account = (value: unknown) => {
   const checked = checkNearAccountId(value);
-  if (!checked.ok) throw new Error(checked.reason ?? "Invalid account.");
+  if (!checked.ok) throw invalidInput(checked.reason ?? "Invalid account.", 'Use a valid NEAR account ID, and check the referenced cell.');
   return checked.accountId;
 };
 const text = (value: unknown) => String(value ?? '');
-const jsonArgs = (value: unknown) => z.record(z.string(), z.unknown()).parse(JSON.parse(text(value)));
+const jsonArgs = (value: unknown) => {
+  let parsed:unknown;
+  try { parsed=JSON.parse(text(value)); } catch { throw invalidInput('The JSON arguments could not be read.', 'Use a JSON object such as {} or {"account_id":"alice.near"}.'); }
+  const checked=z.record(z.string(), z.unknown()).safeParse(parsed);
+  if(!checked.success)throw invalidInput('Contract arguments must be a JSON object.', 'Use {} for a method without arguments.');
+  return checked.data;
+};
 const scalar = (value: unknown): CellValue => {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
   return JSON.stringify(value);
 };
 const positiveAmount = (value: unknown, decimals: number) => {
   const parsed = parseExactAmount(value, decimals);
-  if (!parsed.ok) throw new Error(parsed.message);
-  if (parsed.amount.baseUnits === '0') throw new Error('An action amount must be positive.');
+  if (!parsed.ok) throw invalidInput(parsed.message);
+  if (parsed.amount.baseUnits === '0') throw invalidInput('An action amount must be positive.');
   return parsed.amount;
 };
 export const TABLE_FUNCTIONS = [
@@ -70,6 +73,8 @@ export const TABLE_FUNCTIONS = [
   ['INTENTS_QUOTE', 'origin asset ID, output asset ID, exact amount, output chain, recipient, refund address, slippage bps', '=INTENTS_QUOTE("origin-asset-id","output-asset-id","1","eth","0x0000000000000000000000000000000000000001","alice.near",100)'],
   ['NEAR_BALANCE', 'account, network', '=NEAR_BALANCE("alice.testnet","testnet")'],
   ['FT_BALANCE', 'token, account, network', '=FT_BALANCE("wrap.testnet","alice.testnet","testnet")'],
+  ['NEAR_BALANCE_EXACT', 'account, network', '=NEAR_BALANCE_EXACT("alice.testnet","testnet")'],
+  ['FT_BALANCE_EXACT', 'token, account, network', '=FT_BALANCE_EXACT("wrap.testnet","alice.testnet","testnet")'],
   ['NEAR_VIEW', 'contract, method, JSON arguments, network', '=NEAR_VIEW("dao.sputnikv2.testnet","get_last_proposal_id","{}","testnet")'],
   ['SPUTNIK_PROPOSALS', 'dao, network', '=SPUTNIK_PROPOSALS("dao.sputnikv2.testnet","testnet")'],
   ['SPUTNIK_TRANSFER', 'reference, dao, recipient, exact amount, asset (near or token contract), network', '=SPUTNIK_TRANSFER("invoice-1","dao.sputnikv2.testnet","alice.testnet","1.25","near","testnet")'],
@@ -84,20 +89,23 @@ export const TABLE_FUNCTIONS = [
 export class TableRuntime {
   executions: ExecutionJournal = {};
   calculating = true;
-  readonly errors = new Map<string,string>();
+  readonly diagnostics = new CellDiagnostics();
   readonly operations = new Map<string, Operation>();
   readonly evidence = new Map<string, ReadEvidence>();
   private epoch = 0;
   private disposed = false;
   requestVersion() { return this.epoch; }
-  accept(version:number) { if(this.disposed || this.epoch!==version)throw new Error('Read superseded. Refresh the cell.'); }
+  accept(version:number) { if(this.disposed || this.epoch!==version)throw staleData('Read superseded. Refresh the cell.'); }
   constructor(readonly ports: TablePorts = rpcPorts, readonly query = new QueryClient(), readonly intents:OneClick|null = env.VITE_INTENTS_API_URL ? new OneClick(env.VITE_INTENTS_API_URL) : null) {}
   async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}) {
     const key = [network, contract, method, args];
     const epoch = this.epoch;
     const value = await this.query.fetchQuery({queryKey: key, staleTime: 30_000,
-      queryFn: () => this.ports.view(network, contract, method, args)});
-    if (this.disposed || epoch !== this.epoch) throw new Error('Read superseded. Recalculate.');
+      queryFn: async () => {
+        try { return await this.ports.view(network, contract, method, args); }
+        catch(cause) { throw readProblem(cause,network,contract,method); }
+      }});
+    if (this.disposed || epoch !== this.epoch) throw staleData('Read superseded. Recalculate.');
     this.evidence.set(JSON.stringify(key), {network, value, fetchedAt: new Date(this.query.getQueryState(key)?.dataUpdatedAt ?? Date.now()).toISOString()});
     return value;
   }
@@ -105,54 +113,77 @@ export class TableRuntime {
     if (this.disposed) throw new Error('Workbook closed.');
     args=args.map(value=>Array.isArray(value)&&value.length===1&&Array.isArray(value[0])&&value[0].length===1?value[0][0]:value);
     const signature=TABLE_FUNCTIONS.find(entry=>entry[0]===name);
-    if(!signature || args.length!==signature[1].split(',').length)throw new Error('Wrong argument count. Use the function argument hints.');
+    if(!signature || args.length!==signature[1].split(',').length)throw invalidInput('Wrong argument count.', 'Use the function argument hints to supply all required arguments.');
     if (name === 'INTENTS_STATUS' || name === 'NS_RECEIPT') {
       const op = this.operations.get(text(args[0]));
-      if (!op) throw new Error('Recalculate the action cell first.');
+      if (!op) throw staleData('Recalculate the action cell first.');
       const record = this.executions[op.id];
       if (!record) return 'Not submitted';
       if (name === 'NS_RECEIPT') return [['Attempt state','Transaction','Signer','Recorded at'],[record.state,record.transactionHash,record.account,record.at]];
       const prior = JSON.parse(record.revision) as Operation;
       if (!prior.intents?.depositAddress) throw new Error('No prepared Intents deposit is recorded.');
-      if (!this.intents) throw new Error('Intents is not configured.');
+      if (!this.intents) throw unavailable('Intents is not configured.');
       const result = await this.intents.status(prior.intents.depositAddress);
       return [['Provider stage','Updated at','Details'],[result.status,result.updatedAt,JSON.stringify(result.swapDetails ?? {})]];
     }
     if (name === 'NS_STATUS') {
       const op = this.operations.get(text(args[0]));
-      if (!op) throw new Error('Recalculate the action cell first.');
+      if (!op) throw staleData('Recalculate the action cell first.');
       const record = this.executions[op.id];
       if (!record) return 'Draft · not submitted';
       return record.state === 'confirmed' ? (op.kind !== 'SPUTNIK_VOTE' ? 'Proposal submitted · awaiting governance' : 'Vote confirmed') : record.state;
     }
     if (name === 'NS_FIELD') {
       const draft = this.operations.get(text(args[0]));
-      if (!draft) throw new Error('Draft not available; recalculate the source cell.');
+      if (!draft) throw staleData('Draft not available; recalculate the source cell.');
       const field = text(args[1]);
-      if (!['amount','baseUnits','recipient','asset','source','network','kind'].includes(field)) throw new Error('Unknown draft field.');
+      if (!['amount','baseUnits','recipient','asset','source','network','kind'].includes(field)) throw invalidInput('Unknown draft field.', 'Use amount, baseUnits, recipient, asset, source, network or kind.');
       return scalar(draft[field as keyof Operation]);
     }
     if (name === 'INTENTS_QUOTE') {
-      if (!this.intents) throw new Error('The Intents provider is not configured.');
+      if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input = {originAsset:text(args[0]),destinationAsset:text(args[1]),amount:text(args[2]),destinationChain:text(args[3]),recipient:text(args[4]),refundTo:text(args[5]),slippageTolerance:Number(args[6])};
       const quote = await this.query.fetchQuery({queryKey:['intents-estimate',input],staleTime:5000,queryFn:()=>this.intents!.estimate(input)});
-      if (Date.parse(quote.response.quote.deadline) <= Date.now()) throw new Error('Quote expired. Refresh the estimate.');
-      return [['Estimate · no funding instructions','Value'],['Input base units',quote.response.quote.amountIn],['Output base units',quote.response.quote.amountOut],['Minimum output base units',quote.response.quote.minAmountOut],['Expires',quote.response.quote.deadline],['Slippage (bps)',input.slippageTolerance],['Provider quote',quote.response.correlationId],['Fees','Included in provider output estimate; network fees additional']];
+      if (Date.parse(quote.response.quote.deadline) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
+      const amounts = quote.response.quote;
+      return [['Estimate · no funding instructions','Value','Token / unit'],
+        ['Input amount',amountFromBaseUnits(amounts.amountIn,quote.origin.decimals)!.display,quote.origin.symbol],
+        ['Output amount',amountFromBaseUnits(amounts.amountOut,quote.destination.decimals)!.display,quote.destination.symbol],
+        ['Minimum output',amountFromBaseUnits(amounts.minAmountOut,quote.destination.decimals)!.display,quote.destination.symbol],
+        ['Input asset',quote.origin.assetId,quote.origin.blockchain],
+        ['Output asset',quote.destination.assetId,quote.destination.blockchain],
+        ['Expires',amounts.deadline,'UTC'],['Slippage',input.slippageTolerance,'bps'],
+        ['Input base units',amounts.amountIn,quote.origin.symbol],
+        ['Output base units',amounts.amountOut,quote.destination.symbol],
+        ['Minimum output base units',amounts.minAmountOut,quote.destination.symbol],
+        ['Provider quote',quote.response.correlationId,''],['Fees','Included in provider output estimate; network fees additional','']];
     }
-    const network = networkSchema.parse(args.at(-1));
-    if (name === 'NEAR_BALANCE') {
+    const checkedNetwork = networkSchema.safeParse(args.at(-1));
+    if(!checkedNetwork.success)throw invalidInput('The network must be “mainnet” or “testnet”.');
+    const network = checkedNetwork.data;
+    if (name === 'NEAR_BALANCE' || name === 'NEAR_BALANCE_EXACT') {
       const id = account(args[0]);
-      const units = await this.query.fetchQuery({queryKey: [network,id,'balance'], staleTime:30_000, queryFn: () => this.ports.balance(network,id)});
+      const units = await this.query.fetchQuery({queryKey: [network,id,'balance'], staleTime:30_000, queryFn: async () => {
+        try { return await this.ports.balance(network,id); }
+        catch(cause) { throw readProblem(cause,network,id); }
+      }});
       const amount = amountFromBaseUnits(units,24);
       if (!amount) throw new Error('Invalid native balance.');
-      this.evidence.set(JSON.stringify([network,id,'balance']), {network, fetchedAt: new Date(this.query.getQueryState([network,id,'balance'])?.dataUpdatedAt ?? Date.now()).toISOString(), value: amount});
-      return Number(amount.display);
+      this.evidence.set(JSON.stringify([network,id,'balance']), {network, fetchedAt: new Date(this.query.getQueryState([network,id,'balance'])?.dataUpdatedAt ?? Date.now()).toISOString(), value: {...amount, asset:'near', symbol:'NEAR', account:id, numericValueIsApproximate:true}});
+      return name === 'NEAR_BALANCE_EXACT' ? amount.display : Number(amount.display);
     }
-    if (name === 'FT_BALANCE') {
+    if (name === 'FT_BALANCE' || name === 'FT_BALANCE_EXACT') {
       const token = account(args[0]), owner = account(args[1]);
       const metadata = metadataSchema.parse(await this.read(network,token,'ft_metadata'));
       const units = z.string().regex(/^\d+$/).parse(await this.read(network,token,'ft_balance_of',{account_id:owner}));
-      return Number(amountFromBaseUnits(units,metadata.decimals)!.display);
+      const amount = amountFromBaseUnits(units,metadata.decimals)!;
+      const balanceKey = [network,token,'ft_balance_of',{account_id:owner}];
+      this.evidence.set(JSON.stringify(balanceKey), {
+        network,
+        fetchedAt: new Date(this.query.getQueryState(balanceKey)?.dataUpdatedAt ?? Date.now()).toISOString(),
+        value: {...amount, asset:token, symbol:metadata.symbol, name:metadata.name, account:owner, numericValueIsApproximate:true},
+      });
+      return name === 'FT_BALANCE_EXACT' ? amount.display : Number(amount.display);
     }
     if (name === 'NEAR_VIEW') {
       const result = await this.read(network,account(args[0]),text(args[1]),jsonArgs(args[2]));
@@ -186,9 +217,9 @@ export class TableRuntime {
       const targetMethod = isStake ? 'deposit_and_stake' : z.string().min(1).max(256).parse(args[3]);
       const targetArgs = isStake ? {} : jsonArgs(args[4]);
       const gas = isStake ? '100000000000000' : z.string().regex(/^\d+$/).parse(text(args[5]));
-      if (BigInt(gas) <= 0n || BigInt(gas) > 250000000000000n) throw new Error('Target gas must be between 1 and 250 Tgas in gas units.');
+      if (BigInt(gas) <= 0n || BigInt(gas) > 250000000000000n) throw invalidInput('Target gas must be between 1 and 250 Tgas in gas units.');
       const parsed = parseExactAmount(isStake ? args[3] : args[6],24);
-      if (!parsed.ok) throw new Error(parsed.message);
+      if (!parsed.ok) throw invalidInput(parsed.message);
       ({display:amount,baseUnits} = parsed.amount);
       if(isStake) {
         positiveAmount(args[3],24);
@@ -203,12 +234,12 @@ export class TableRuntime {
       this.operations.set(label,{...data,revision:JSON.stringify(data)});return label;
     }
     if (name === 'INTENTS_SWAP') {
-      if (network !== 'mainnet') throw new Error('1Click has no testnet route.');
-      if (!this.intents) throw new Error('The Intents provider is not configured.');
+      if (network !== 'mainnet') throw unavailable('1Click has no testnet route.');
+      if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input:QuoteInput = {originAsset:text(args[2]),destinationAsset:text(args[3]),amount:text(args[4]),destinationChain:text(args[5]),recipient:text(args[6]),refundTo:account(args[7]),slippageTolerance:Number(args[8])};
-      if (input.refundTo !== source) throw new Error('DAO-funded swaps must refund to the source DAO.');
+      if (input.refundTo !== source) throw invalidInput('DAO-funded swaps must refund to the source DAO.');
       const estimate = await this.intents.estimate(input);
-      if (estimate.origin.blockchain !== 'near' || !input.originAsset.startsWith('nep141:')) throw new Error('DAO funding currently supports NEAR fungible tokens only.');
+      if (estimate.origin.blockchain !== 'near' || !input.originAsset.startsWith('nep141:')) throw unavailable('DAO funding currently supports NEAR fungible tokens only.');
       asset = account(input.originAsset.slice(7));
       const meta = metadataSchema.parse(await this.read(network,asset,'ft_metadata'));
       if (meta.decimals !== estimate.origin.decimals) throw new Error('Provider and NEAR token precision differ.');
@@ -249,7 +280,7 @@ export class TableRuntime {
     if (!op.intents) return op;
     if (this.executions[op.id] && !['cancelled','failed'].includes(this.executions[op.id]!.state)) throw new Error('This swap has an execution attempt. A replacement quote requires a new reference and proposal.');
     if (op.intents.stage === 'prepared' && Date.parse(op.intents.expiresAt) > Date.now()) return op;
-    if (!this.intents) throw new Error('Intents is not configured.');
+    if (!this.intents) throw unavailable('Intents is not configured.');
     const quote = await this.intents.prepare(op.intents.input);
     const depositAddress = account(quote.response.quote.depositAddress);
     const policy = z.object({proposal_bond:z.string().regex(/^\d+$/)}).parse(op.policy);
@@ -261,7 +292,7 @@ export class TableRuntime {
     for (const [label,value] of this.operations) if(value.id===op.id && value.revision===op.revision)this.operations.set(label,prepared);
     return prepared;
   }
-  refresh() { this.epoch++; this.operations.clear(); this.query.clear(); }
+  refresh() { this.epoch++; this.operations.clear(); this.diagnostics.clear(); this.query.clear(); }
   dispose() { this.disposed = true; this.refresh(); }
 }
 

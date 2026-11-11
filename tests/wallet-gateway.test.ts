@@ -22,6 +22,7 @@ interface FakeAccount {
 
 interface FakeConnector {
   network: NearNetwork;
+  excludedWallets: string[];
   events: Map<string, Set<() => void>>;
   disconnect: ReturnType<typeof vi.fn>;
 }
@@ -42,11 +43,13 @@ const behavior: {
 vi.mock("@hot-labs/near-connect", () => ({
   NearConnector: class {
     network: NearNetwork;
+    excludedWallets: string[];
     events = new Map<string, Set<() => void>>();
     disconnect = vi.fn(async () => undefined);
 
-    constructor(options: { network?: NearNetwork }) {
+    constructor(options: { network?: NearNetwork; excludedWallets?: string[] }) {
       this.network = options.network ?? "testnet";
+      this.excludedWallets = options.excludedWallets ?? [];
       connectorRef.current = this as unknown as FakeConnector;
     }
 
@@ -112,6 +115,7 @@ describe("connector wallet gateway", () => {
       walletName: "Meteor Wallet",
     });
     expect(connectorRef.current?.network).toBe("testnet");
+    expect(connectorRef.current?.excludedWallets).toEqual(expect.arrayContaining(["ledger", "ethereum-wallets", "wallet-connect", "passkey"]));
   });
 
   it("passes the selected network rather than the configured default", async () => {

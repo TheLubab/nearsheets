@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import { env } from '../../config/env';
 import { TABLE_FUNCTIONS } from './runtime';
+import { checkNearAccountId } from '../treasury/model/near-account';
+import { parseExactAmount } from '../treasury/model/exact-amount';
 export const functionHelp:Record<string,{title:string;description:string;group:string}>={
  NEAR_BALANCE:{title:'NEAR balance',description:'Read an account balance into the selected cell. Use the result in calculations.',group:'Read data'},
  FT_BALANCE:{title:'Token balance',description:'Read a fungible-token balance using the token contract’s verified precision.',group:'Read data'},
+ NEAR_BALANCE_EXACT:{title:'Exact NEAR balance',description:'Return the full NEAR balance as decimal text for transaction amounts. Ordinary balance functions return approximate numbers for calculations.',group:'Read data'},
+ FT_BALANCE_EXACT:{title:'Exact token balance',description:'Return the full token balance as decimal text using verified token precision. Reference this cell in a transaction amount to preserve every digit.',group:'Read data'},
  SPUTNIK_PROPOSALS:{title:'DAO proposals',description:'Insert a proposal table with IDs, descriptions, statuses and proposers. Leave room below and to the right.',group:'Read data'},
  NEAR_VIEW:{title:'Contract data',description:'Call a read-only contract method. Records and tables fill a range starting at the selected cell.',group:'Read data'},
  SPUTNIK_TRANSFER:{title:'DAO transfer proposal',description:'Prepare a native NEAR or token transfer. Creating the formula does not submit a proposal or move funds.',group:'Prepare an action'},
@@ -39,7 +43,20 @@ export function FunctionArguments({target,onInsert,functionName}:{target:string;
   const value=values[parameter]??'';
   if(!value.trim())return 'This field is required.';
   if(value.startsWith('=')&&!value.slice(1).trim())return 'Enter a cell reference after =.';
+  if(value.startsWith('='))return null;
+  const nearAccount=['account','dao','contract','token','staking pool','refund DAO'].includes(parameter) || (parameter==='recipient' && name.startsWith('SPUTNIK_'));
+  if(nearAccount || (parameter.startsWith('asset (') && value!=='near')) {
+   const checked=checkNearAccountId(value);if(!checked.ok)return checked.reason ?? 'Enter a valid NEAR account ID.';
+  }
+  if(parameter.includes('JSON')) {
+   try {const parsed:unknown=JSON.parse(value);if(!parsed || typeof parsed!=='object' || Array.isArray(parsed))return 'Use a JSON object, such as {}.';}
+   catch {return 'Enter valid JSON, such as {}.';}
+  }
+  if(parameter.startsWith('exact ') || parameter==='attached NEAR') {
+   const checked=parseExactAmount(value,24);if(!checked.ok)return checked.message;
+  }
   if(!value.startsWith('=')&&(parameter.toLowerCase()==='proposal id'||parameter==='slippage bps')&&!/^\d+$/.test(value))return 'Enter a whole number or a cell reference.';
+  if(parameter==='slippage bps' && Number(value)>5000)return 'Slippage must be between 0 and 5000 basis points.';
   return null;
  };
  const formula=useMemo(()=>{

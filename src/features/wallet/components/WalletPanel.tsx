@@ -1,6 +1,7 @@
+import { WalletIcon } from "@solar-icons/react/linear/wallet";
+import { AltArrowDownIcon } from "@solar-icons/react/linear/alt-arrow-down";
 import { NEAR_NETWORKS, type NearNetwork } from "../../../integrations/near/network";
-import type { WalletState } from "../application/wallet-controller";
-import type { WalletController } from "../application/wallet-controller";
+import type { WalletState, WalletController } from "../application/wallet-controller";
 
 interface WalletPanelProps {
   wallet: WalletController;
@@ -11,100 +12,51 @@ function networkLabel(network: NearNetwork): string {
   return network === "mainnet" ? "Mainnet" : "Testnet";
 }
 
-/**
- * Wallet connection UI.
- *
- * Two rules shape it:
- * - Local editing never depends on this panel; a failure here leaves the
- *   spreadsheet usable.
- * - A cancelled selector returns to "Not connected" with an explanation and no
- *   error styling, so the user can retry without clearing anything.
- */
 export function WalletPanel({ wallet, state }: WalletPanelProps) {
   const { status, connection, error, cancelled, network } = state;
-  const connecting = status === "connecting";
-  const disconnecting = status === "disconnecting";
-  const connected = status === "connected" && connection !== null;
+  const busy = status === "connecting" || status === "disconnecting";
 
   return (
     <section className="wallet-panel" aria-label="Wallet">
-      <div className="wallet-panel__row">
-        <span
-          className={`wallet-panel__dot wallet-panel__dot--${connected ? "on" : "off"}`}
-          aria-hidden="true"
-        />
-        {connected ? (
-          <>
-            <span className="wallet-panel__account" title={connection.accountId}>
-              {connection.accountId}
-            </span>
-            <span className="wallet-panel__wallet">{connection.walletName}</span>
-            <span className="wallet-panel__network">{networkLabel(network)}</span>
-            <button
-              type="button"
-              onClick={() => void wallet.disconnect()}
-              disabled={disconnecting}
-            >
-              {disconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="wallet-panel__account">Not connected</span>
-            <span className="wallet-panel__network">{networkLabel(network)}</span>
-            <button
-              type="button"
-              onClick={() => void wallet.connect()}
-              disabled={connecting}
-            >
-              {connecting ? "Connecting…" : "Connect wallet"}
-            </button>
-          </>
-        )}
-
-        <label className="wallet-panel__network-select">
-          <span>Wallet network</span>
-          <select
-            value={network}
-            disabled={connecting || disconnecting}
-            onChange={(event) => {
-              const next = event.target.value as NearNetwork;
-              void wallet.setNetwork(next);
-            }}
-          >
-            {NEAR_NETWORKS.map((value) => (
-              <option key={value} value={value}>
-                {networkLabel(value)}
-              </option>
-            ))}
+      <div className="wallet-panel__settings">
+        {connection ? <p>Changing networks disconnects your wallet.</p> : null}
+        <span className="wallet-panel__network-control">
+          <select id="wallet-network" aria-label="Network" value={network} disabled={busy} onChange={(event) => void wallet.setNetwork(event.target.value as NearNetwork)}>
+            {NEAR_NETWORKS.map((value) => <option key={value} value={value}>{networkLabel(value)}</option>)}
           </select>
-        </label>
+          <AltArrowDownIcon size={14} aria-hidden="true"/>
+        </span>
       </div>
 
+      {connection ? (
+        <div className="wallet-panel__identity">
+          <div className="wallet-panel__identity-heading">
+            <span className="wallet-panel__icon" aria-hidden="true"><WalletIcon size={21}/></span>
+            <span className="wallet-panel__connected"><span aria-hidden="true"/>Connected</span>
+          </div>
+          <span className="wallet-panel__account" title={connection.accountId}>{connection.accountId}</span>
+          <span className="wallet-panel__wallet">{connection.walletName}</span>
+        </div>
+      ) : (
+        <button type="button" className="wallet-panel__choice" onClick={() => void wallet.connect()} disabled={busy}>
+          <img className="wallet-panel__near-icon" src={`${import.meta.env.BASE_URL}near-wallet-mark.svg`} alt="" />
+          <span className="wallet-panel__choice-title">{status === "connecting" ? "Opening wallet selector…" : "NEAR wallets"}</span>
+        </button>
+      )}
+
       {cancelled ? (
-        <p className="wallet-panel__notice" role="status">
-          Wallet connection was cancelled. Nothing changed; connect whenever you
-          are ready.
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={() => wallet.dismissCancelled()}
-          >
-            ×
-          </button>
-        </p>
+        <div className="wallet-panel__notice" role="status">
+          <span>Wallet selection cancelled.</span>
+          <button type="button" onClick={() => wallet.dismissCancelled()}>Dismiss</button>
+        </div>
       ) : null}
+      {error ? <p className="wallet-panel__error" role="alert">{error}</p> : null}
 
-      {error ? (
-        <p className="wallet-panel__error" role="alert">
-          {error}
-        </p>
+      {connection ? (
+        <button type="button" className="wallet-panel__disconnect" onClick={() => void wallet.disconnect()} disabled={busy}>
+          {status === "disconnecting" ? "Disconnecting…" : "Disconnect wallet"}
+        </button>
       ) : null}
-
-      <p className="wallet-panel__hint">
-        Connecting only identifies your account. It does not sign, submit or
-        move funds, and you can keep editing without a wallet.
-      </p>
     </section>
   );
 }

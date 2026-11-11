@@ -13,7 +13,7 @@ describe('footer view controls', () => {
       { key: 'ribbon.view.Visibility', children: [{ key: fullscreen.id, order: 1, item: fullscreen }] },
     ], mergeMenu };
     moveViewControlsToFooter({ __getInjector: () => ({ get: () => menus }) } as unknown as Univer);
-    const schema = mergeMenu.mock.calls[0][0];
+    const schema = mergeMenu.mock.calls[0]?.[0];
     const footer = schema['contextMenu.footerMenu']['nearsheets.footer.view'];
     expect(footer['nearsheets.footer.freeze'].menuItemFactory().selections).toEqual(freeze.selections);
     expect(footer['nearsheets.footer.fullscreen'].menuItemFactory().commandId).toBe(fullscreen.id);

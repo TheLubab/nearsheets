@@ -1,5 +1,7 @@
 # One milestone: rebuild the product as NearSheets
 
+This is the governing requirements brief, not a statement that every feature is complete. The problem descriptions below capture the refactor's starting point. See [implementation status](implementation-status.md) for current code/evidence and outstanding acceptance, and [the formula catalog](functions.md) for the actual signatures, including exact-balance variants. Keep the requirements intact when documenting progress.
+
 ## Read this first
 
 The user has rejected the direction of the existing implementation. This is a comprehensive product, architecture and UI refactor, not a polish pass on the existing payment template. Deliver one coherent NEAR table interface. Internal work sequencing is fine, but there are no separate milestone deliverables and no permission to stop after completing a shell, a utility layer or a mock demo.
@@ -26,7 +28,7 @@ Action functions return meaningful typed drafts with arguments and validation in
 
 Expose discovery and execution through integrated formula autocomplete/help, argument hints, contextual cell/range menus and a concise selection toolbar. An optional argument editor inserts/edits the underlying expression. A contextual preview dialog is appropriate for deliberate execution; permanent forms and payment lists outside the sheet are not the primary workflow.
 
-An illustrative public catalog could include the following. These are proposed NearSheets functions, not claims that Univer or upstream SDKs provide them. Verify names/signatures against formula-parser capabilities and implement a consistent catalog rather than copying the examples mechanically.
+The following table records the illustrative catalog from the brief. Its abbreviated signatures are requirements examples; [the current formula catalog](functions.md) records implemented arguments, results and restrictions. These are NearSheets functions, not claims that Univer or upstream SDKs provide them.
 
 | Example capability | Expected table behavior |
 | --- | --- |
@@ -81,6 +83,7 @@ Optional email/Google, passkey or other wallet integrations can be wired through
 Use an established accessible component system for application chrome; shadcn/ui is the preferred starting point. Read its official [docs](https://ui.shadcn.com/docs), [components](https://ui.shadcn.com/docs/components) and [theming](https://ui.shadcn.com/docs/theming), and adopt compatible patterns/components rather than hand-designing substitutes. It supplies adaptable components, not a finished spreadsheet product; NearSheets still needs deliberate layout and integration with Univer.
 
 - Give the workbook most of the viewport. Use a compact document/account bar, coherent command menus, formula bar and sheet tabs. Remove stacked developer-status banners and always-open treasury panels.
+- Preserve the user's File menu in the ribbon tab row alongside the native tabs. Function discovery belongs in the Blockchain dropdowns; transient startup/calculation feedback uses the scoped toaster.
 - Use consistent typography, spacing, surfaces, borders, icons, focus states and interaction density. Align Univer's theme with the surrounding controls. Avoid oversized cards and decorative marketing sections.
 - Use accessible menus, dialogs, tooltips, comboboxes and contextual command patterns from the chosen system. Do not replace Univer with shadcn's ordinary data table.
 - Give blockchain cells concise readable states and inspectable details: loading, stale, validation issue, draft, awaiting approval, submitted, settled/refunded. Do not display raw JSON, hashes or implementation labels as the default cell experience.

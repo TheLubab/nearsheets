@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  font-family: "Inter Variable", "Segoe UI", system-ui, sans-serif;
   --background: #fafafa;
   --foreground: #18181b;
   --muted: #f4f4f5;
@@ -18,52 +18,80 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--background); color: var(--foreground); }
 .app-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.app-shell__header { display: flex; align-items: flex-start; gap: 14px; padding: 6px 14px; flex-shrink: 0; background: white; }
+.app-shell__header { position: relative; z-index: 1; display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 6px 14px; flex-shrink: 0; background: white; }
 .app-shell__header h1 { margin: 0; }
-.brand { display: flex; align-items: center; gap: 8px; padding-top: 10px; flex-shrink: 0; font-size: 13px; letter-spacing: -.4px; }
+.brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 13px; letter-spacing: -.4px; }
 .brand__mark { display: block; width: 32px; height: 27px; object-fit: contain; flex-shrink: 0; }
 .document-context { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.document-bar__identity { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 29px; }
+.document-bar__identity { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 32px; }
 /* Application controls are scoped so Univer keeps its own toolbar styles. */
 :where(.app-shell__header, .dialog-content, .menu-content) button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 30px; padding: 5px 10px; border: 1px solid var(--border);
   border-radius: var(--radius); background: white; color: var(--foreground);
-  font: inherit; font-size: 12px; cursor: pointer;
+  font: inherit; font-size: 13px; cursor: pointer;
 }
 :where(.app-shell__header, .dialog-content, .menu-content) button:hover { background: var(--muted); }
 :where(.app-shell__header, .dialog-content, .menu-content) button:disabled { opacity: .45; cursor: default; }
 :where(.app-shell__header, .dialog-content, .menu-content) :is(button,input,select,summary):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-.document-bar__identity .document-bar__title { max-width: 320px; min-width: 0; min-height: 27px; padding: 2px 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-color: transparent; font-size: 15px; font-weight: 500; }
-.document-bar__identity .document-bar__open { border: 0; padding: 4px; min-height: 26px; color: var(--muted-foreground); }
-.document-bar__save { font-size: 10px; color: var(--muted-foreground); white-space: nowrap; }
+.document-bar__identity .document-bar__title { display: block; max-width: 320px; min-width: 0; min-height: 30px; padding: 4px 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-color: transparent; font-size: 14px; font-weight: 600; text-align: left; }
+.document-bar__identity .document-bar__open { flex: none; width: 30px; height: 30px; border: 0; padding: 4px; color: var(--muted-foreground); }
+.document-bar__save { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .document-bar__save--error, .document-bar__error { color: #b91c1c; }
 .document-bar__file { display: none; }
 .document-bar__rename { display: flex; gap: 5px; }
 .document-bar__rename input { width: 220px; min-width: 80px; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); padding: 5px; font: inherit; font-size: 13px; }
 .document-bar__notice { display: flex; align-items: center; gap: 12px; font-size: 12px; }
 .document-bar__error { font-size: 12px; margin: 0; }
-.account-control { margin-top: 7px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-control { flex: none; max-width: 220px; white-space: nowrap; }
+.account-control svg { flex: none; }
+.account-control span { overflow: hidden; text-overflow: ellipsis; }
 .app-menubar { display: flex; align-items: center; min-height: 26px; flex-wrap: wrap; }
-.app-menubar>button { border: 0; background: transparent; min-height: 25px; padding: 3px 7px; border-radius: 4px; font-size: 12px; }
+.app-menubar>button { border: 0; background: transparent; min-height: 25px; padding: 3px 7px; border-radius: 4px; font-size: 13px; }
 .app-menubar>button:hover, .app-menubar>button[data-state="open"] { background: var(--muted); }
-.menu-content { z-index: 60; min-width: 210px; background: white; border: 1px solid var(--border); border-radius: 6px; padding: 4px; box-shadow: 0 4px 12px #0002; font-size: 12px; }
+.menu-content { z-index: 60; min-width: 210px; background: white; border: 1px solid var(--border); border-radius: 6px; padding: 4px; box-shadow: 0 4px 12px #0002; font-size: 13px; }
 .menu-item { padding: 7px 10px; cursor: default; border-radius: 3px; outline: none; }
 .menu-item[data-highlighted] { background: var(--muted); }
 .menu-item[data-disabled] { color: #a1a1aa; pointer-events: none; }
 .menu-separator { height: 1px; background: var(--border); margin: 4px -4px; }
-.app-shell__main { flex: 1; min-height: 0; min-width: 0; display: flex; }
-.workbook-status { display: grid; place-content: center; flex: 1; color: var(--muted-foreground); }
+.app-shell__main { position: relative; z-index: 0; flex: 1; min-height: 0; min-width: 0; display: flex; }
+/* Fatal load errors. Transient loading states are reported by the toast layer. */
+.workbook-status { display: grid; place-content: center; flex: 1; padding: 24px; color: #b91c1c; font-size: 13px; text-align: center; }
 .workbook-editor { flex: 1; position: relative; min-height: 0; min-width: 0; overflow: hidden; background: white; }
 .workbook-editor__host { position: absolute; inset: 0; }
 .workbook-editor__host>* { height: 100%; }
-.workbook-editor__overlay { position: absolute; inset: 0; display: grid; place-content: center; background: white; color: var(--muted-foreground); font-size: 13px; }
+/* A failed start has no usable grid, so the message stays prominent. Startup
+   progress is reported by the toast layer instead of covering the canvas. */
+.workbook-editor__failure { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; background: white; color: #b91c1c; font-size: 13px; text-align: center; }
+.workbook-editor__failure p { margin: 0; max-width: 46ch; }
+/* Sonner (shadcn/ui toast). Sonner injects its own structural CSS and sets
+   `--width` inline; these overrides only align the surface with our tokens. */
+.app-toaster { font-family: inherit; }
+.app-toaster [data-sonner-toast][data-styled="true"].app-toast {
+  padding: 11px 14px; gap: 10px;
+  border: 1px solid #cbd8d0; border-radius: 8px;
+  background: linear-gradient(180deg, #fff 0%, #f2f7f4 100%); color: var(--foreground);
+  box-shadow: inset 0 1px #fff, 0 4px 14px #233c3226; font-size: 12px; line-height: 1.5;
+}
+.app-toaster [data-sonner-toast].app-toast [data-title] { font-weight: 600; color: #233c32; }
+.app-toaster [data-sonner-toast].app-toast [data-description] { color: var(--muted-foreground); font-size: 11px; }
+.app-toaster [data-sonner-toast].app-toast [data-icon] { margin-inline: 0 2px; color: var(--muted-foreground); }
+.app-toaster [data-sonner-toast].app-toast [data-close-button] {
+  border-color: var(--border); background: white; color: var(--muted-foreground);
+}
+.app-toaster [data-sonner-toast][data-styled="true"].app-toast [data-button] {
+  border: 1px solid #b9cec1; border-radius: 5px;
+  background: linear-gradient(180deg, #fff 0%, #e3eee7 100%); color: #204c3d;
+  box-shadow: inset 0 1px #fff;
+}
+.app-toaster [data-sonner-toast][data-styled="true"].app-toast [data-button]:hover { background: #dbece1; }
+.app-toaster [data-sonner-toast][data-styled="true"].app-toast [data-button]:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.app-toaster [data-sonner-toast][data-type="error"].app-toast { border-color: #f3c9c9; background: #fffafa; }
+.app-toaster [data-sonner-toast][data-type="error"].app-toast [data-icon] { color: #b91c1c; }
+.app-toaster [data-sonner-toast][data-type="success"].app-toast { border-color: #c9e3d7; }
+.app-toaster [data-sonner-toast][data-type="success"].app-toast [data-icon] { color: var(--primary); }
 .wallet-panel { margin: 0; border: 0; padding: 0; }
-.wallet-panel__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.wallet-panel__account { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-.wallet-panel__wallet, .wallet-panel__network, .wallet-panel__hint, .wallet-panel__notice, .wallet-panel__error, .service-account { font-size: 12px; color: var(--muted-foreground); }
-.wallet-panel__network-select { display: flex; align-items: center; gap: 5px; font-size: 11px; }
-.wallet-panel__network-select select { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px; background: white; }
+.service-account { font-size: 12px; color: var(--muted-foreground); }
 .service-account { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 8px; }
 .dialog-overlay { position: fixed; inset: 0; background: #0006; z-index: 70; }
 .dialog-content { position: fixed; z-index: 71; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(700px,calc(100vw - 24px)); max-height: 85dvh; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: white; box-shadow: 0 20px 60px #0003; font-size: 13px; }
@@ -72,7 +100,7 @@ body { background: var(--background); color: var(--foreground); }
 .dialog-content .dialog-close { position: absolute; right: 12px; top: 12px; padding: 4px; border: 0; }
 .document-picker { display: grid; gap: 6px; }
 .document-picker button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 10px; }
-.document-picker span { color: var(--muted-foreground); font-size: 11px; }
+.document-picker span { color: var(--muted-foreground); font-size: 12px; }
 .operation-preview { border-top: 1px solid var(--border); padding: 12px 0; }
 .operation-preview h3 { font-size: 14px; overflow-wrap: anywhere; }
 .operation-preview dl { display: grid; grid-template-columns: 155px 1fr; gap: 7px; }
@@ -82,7 +110,7 @@ body { background: var(--background); color: var(--foreground); }
 .function-arguments label { font-size: 12px; font-weight: 500; }
 .function-arguments input, .function-arguments select { width: 100%; min-width: 0; font: inherit; font-size: 12px; border: 1px solid var(--border); border-radius: 5px; padding: 7px 8px; background: white; color: var(--foreground); }
 .function-arguments :is(input,select)[aria-invalid="true"] { border-color: #b42318; background: #fffafa; }
-.function-arguments__error { color: #b42318; font-size: 11px; font-weight: 400; line-height: 1.4; }
+.function-arguments__error { color: #b42318; font-size: 12px; font-weight: 400; line-height: 1.4; }
 .function-arguments option { padding: 6px 4px; font-weight: 400; }
 .function-arguments optgroup { font-size: 11px; font-weight: 600; }
 .function-arguments__arguments { display: grid; gap: 12px; }
@@ -97,43 +125,74 @@ body { background: var(--background); color: var(--foreground); }
   .brand span { display: none; }
 }
 @media(max-width:540px) {
-  .account-control { max-width: 135px; font-size: 11px; }
+  .account-control { max-width: 135px; font-size: 12px; }
   .app-shell__header { gap: 5px; padding: 5px 8px; }
   .document-bar__identity { gap: 3px; flex-wrap: wrap; }
   .document-bar__identity .document-bar__title { max-width: 160px; font-size: 13px; }
-  .document-bar__save { font-size: 9px; }
+  .document-bar__save { font-size: 11px; }
   .function-arguments { grid-template-columns: 1fr; }
   .operation-preview dl { grid-template-columns: 1fr; }
 }
 
-/* Keep Univer's tab navigation, with a flat document-style presentation. */
+/* Connected ribbon tabs: the active label and its tools share one surface.
+   Keep Univer's tab roles, focus handling and responsive toolbar overflow. */
+.workbook-session { --ribbon-surface: #edf3ef; }
+.workbook-session [data-u-comp="ribbon-header-menu"] { display: flex; align-items: flex-end; background: #fff; }
+.app-shell__header .app-menubar--ribbon { position: absolute; top: calc(100% + 4px); left: 12px; height: 32px; }
+.app-shell__header .app-menubar--ribbon > button { height: 32px; padding: 0 14px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: #626963; font: 500 13px "Inter Variable","Segoe UI",system-ui,sans-serif; cursor: pointer; }
+.app-shell__header .app-menubar--ribbon > button:hover, .app-shell__header .app-menubar--ribbon > button[data-state="open"] { background: #eef1ef; color: var(--foreground); }
+.app-shell__header .app-menubar--ribbon > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -4px; }
 .workbook-session [data-u-comp="ribbon-header-menu"] > [role="tablist"] {
+  flex: 1;
+  min-width: 0;
   justify-content: flex-start;
-  gap: 18px;
-  padding-inline: 18px;
+  align-items: flex-end;
+  height: 36px;
+  gap: 3px;
+  padding: 4px 12px 0 70px;
   border-radius: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
   background: #fff;
 }
 .workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"] {
   position: relative;
-  min-height: 35px;
-  padding: 0 2px;
-  border: 0;
-  border-radius: 0;
+  flex-shrink: 0;
+  height: 32px;
+  min-height: 32px;
+  margin-bottom: 0;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
   box-shadow: none;
   background: transparent;
-  color: #696f6b;
+  color: #626963;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
-.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"]:hover { color: var(--foreground); background: transparent; }
-.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"][aria-selected="true"] { color: var(--primary); font-weight: 600; }
-.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"][aria-selected="true"]::after { content: ''; position: absolute; height: 2px; inset-inline: 0; bottom: 0; background: #28745a; }
-.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"]:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; box-shadow: none; }
+.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"]:hover { color: var(--foreground); background: #eef1ef; }
+.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"][aria-selected="true"] {
+  z-index: 1;
+  color: var(--primary);
+  border-color: var(--border);
+  background: var(--ribbon-surface);
+}
+.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"]::after { content: none; }
+.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"]:focus-visible { outline: 2px solid var(--ring); outline-offset: -4px; box-shadow: none; }
+.workbook-session [data-u-comp="ribbon-header-menu"] + div:has(> [data-u-comp="ribbon-toolbar"]) {
+  height: 40px;
+  background: var(--ribbon-surface);
+  border-bottom-color: var(--border);
+}
 .workbook-session [data-u-comp="ribbon-toolbar"] { justify-content: flex-start; }
-.blockchain-tool-label { display: inline-flex; align-items: center; gap: 5px; padding-inline: 5px; font: 12px Inter,"Segoe UI",system-ui,sans-serif; white-space: nowrap; }
+/* Match the formula controls to the ribbon; the editor keeps a white surface. */
+.workbook-session [data-u-comp="formula-bar"] {
+  background: var(--ribbon-surface);
+  border-bottom: 1px solid #c9d5ce;
+}
+.workbook-session [data-u-comp="formula-bar"] .univer-bg-gray-0 { background: #fff; }
+.blockchain-tool-label { display: inline-flex; align-items: center; gap: 5px; padding-inline: 5px; font: 13px "Inter Variable","Segoe UI",system-ui,sans-serif; white-space: nowrap; }
 .blockchain-tool-label > svg { flex-shrink: 0; color: currentColor; }
 .workbook-session [data-u-comp="ribbon-toolbar"][aria-label="Blockchain"] > div { padding-inline: 8px; gap: 3px; }
 .workbook-session [data-u-comp="ribbon-toolbar"][aria-label="Blockchain"] > div:has([data-u-command="nearsheets.blockchain.refresh"]) { margin-inline-start: auto; }
@@ -146,3 +205,151 @@ body { background: var(--background); color: var(--foreground); }
 .formula-preview { display:grid; gap:6px; padding:10px 12px; background:var(--muted); border:1px solid var(--border); border-radius:6px; overflow-wrap:anywhere; }
 .formula-preview>span { font-size:11px; color:var(--muted-foreground); }
 .formula-preview code { font-size:12px; white-space:pre-wrap; }
+
+/* A softly lit, dimensional treatment for the application chrome. */
+.app-shell__header {
+  background: #fff;
+  box-shadow: none;
+}
+.brand { color: #244a3d; text-shadow: 0 1px #fff; }
+.app-shell__header .account-control {
+  min-height: 32px;
+  gap: 8px;
+  border-color: #245b46;
+  background: #245b46;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: none;
+}
+.app-shell__header .account-control:hover { background: #1c4938; }
+.app-shell__header .account-control:active { background: #163b31; }
+.app-shell__header .account-control--connect { min-height: 34px; padding: 6px 14px; border-radius: 8px; }
+.app-shell__header .account-control--connected {
+  border-color: #d7e0da;
+  background: #fff;
+  color: #294438;
+  font-weight: 500;
+}
+.app-shell__header .account-control--connected:hover { background: #f3f7f4; }
+.app-shell__header .account-control--connected:active { background: #eaf1ec; }
+.account-control__status { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #26865b; }
+.workbook-session [data-u-comp="ribbon-header-menu"],
+.workbook-session [data-u-comp="ribbon-header-menu"] > [role="tablist"] {
+  background: #fff;
+}
+.workbook-session [data-u-comp="ribbon-header-menu"]::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 1px;
+  background: #c9d5ce;
+  pointer-events: none;
+}
+.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"][aria-selected="true"] {
+  border-color: #c9d5ce;
+  background: linear-gradient(180deg, #e2ede6 0%, var(--ribbon-surface) 100%);
+  box-shadow: inset 0 1px #ffffffa6, 0 -1px 2px #425b4a0d;
+}
+.workbook-session [data-u-comp="ribbon-header-menu"] + div:has(> [data-u-comp="ribbon-toolbar"]) {
+  background: linear-gradient(180deg, var(--ribbon-surface) 0%, #dce9e1 100%);
+  box-shadow: none;
+}
+.workbook-session [data-u-comp="formula-bar"] {
+  background: linear-gradient(180deg, #f7faf8 0%, #eaf0ec 100%);
+  box-shadow: inset 0 1px #fff;
+}
+.workbook-session footer section[data-range-selector] {
+  background: linear-gradient(180deg, #f7faf8 0%, #e4ede7 100%);
+  border-top: 1px solid #c9d5ce;
+  box-shadow: inset 0 1px #fff;
+}
+.workbook-session [data-u-command="nearsheets.blockchain.review"]:enabled {
+  background: linear-gradient(180deg, #3d8869 0%, #235b45 100%);
+  box-shadow: inset 0 1px #ffffff59, 0 1px 2px #173e2f40;
+  text-shadow: 0 1px #173e2f80;
+}
+.workbook-session [data-u-command="nearsheets.blockchain.review"]:enabled:hover {
+  background: linear-gradient(180deg, #4b9b79 0%, #286a50 100%);
+}
+
+/* Keep document controls quiet until needed, then give them the same light
+   edge and pressed depth as the rest of the chrome. */
+.document-bar__identity .document-bar__title,
+.document-bar__identity .document-bar__open { background: transparent; box-shadow: none; }
+.document-bar__identity :is(.document-bar__title, .document-bar__open):hover {
+  background: linear-gradient(180deg, #fff 0%, #e5ede8 100%);
+  box-shadow: inset 0 1px #fff, 0 1px 2px #233c321a;
+}
+.document-bar__identity .document-bar__title:hover { border-color: #cbd8d0; }
+.document-bar__rename { min-width: 0; align-items: center; }
+.document-bar__rename input {
+  height: 30px;
+  border-color: #a9c2b3;
+  background: #fff;
+  color: var(--foreground);
+  box-shadow: inset 0 1px 3px #233c321a, 0 1px #ffffffb3;
+  font-size: 14px;
+  font-weight: 600;
+}
+.app-shell__header .document-bar__rename button,
+.dialog-content button:not(.primary-button):not(.dialog-close) {
+  border-color: #cbd8d0;
+  background: linear-gradient(180deg, #fff 0%, #e8efeb 100%);
+  box-shadow: inset 0 1px #fff, 0 1px 2px #233c321a;
+}
+.app-shell__header .document-bar__rename button:hover,
+.dialog-content button:not(.primary-button):not(.dialog-close):hover {
+  background: linear-gradient(180deg, #fff 0%, #d9e9df 100%);
+}
+.app-shell__header .document-bar__rename button:active,
+.dialog-content button:not(.primary-button):not(.dialog-close):active {
+  background: #dce9e1;
+  box-shadow: inset 0 1px 3px #233c3226;
+}
+.dialog-content .primary-button {
+  border-color: #235b45;
+  background: linear-gradient(180deg, #3d8869 0%, #235b45 100%);
+  box-shadow: inset 0 1px #ffffff59, 0 1px 2px #173e2f40;
+  text-shadow: 0 1px #173e2f80;
+}
+.dialog-content .primary-button:hover { background: linear-gradient(180deg, #4b9b79 0%, #286a50 100%); }
+.dialog-content .dialog-close { background: transparent; }
+.dialog-content .dialog-close:hover { background: #e8efeb; }
+
+/* Account dialog */
+.dialog-content.account-dialog { width: min(460px, calc(100vw - 24px)); padding: 40px 32px; border-radius: 14px; }
+.account-dialog .dialog-title { min-height: 32px; margin: 0 120px 48px 0; padding-top: 4px; font-size: 19px; letter-spacing: -.35px; }
+.wallet-panel { display: grid; gap: 22px; }
+.dialog-content button.wallet-panel__choice:not(.primary-button) {
+  width: 100%; min-height: 82px; justify-content: flex-start; gap: 14px;
+  padding: 16px; text-align: left; border: 0; border-radius: 10px;
+  background: #f4f4f5; color: var(--foreground); box-shadow: none;
+}
+.dialog-content button.wallet-panel__choice:not(.primary-button):hover,
+.dialog-content button.wallet-panel__choice:not(.primary-button):active { background: #f4f4f5; box-shadow: none; }
+.wallet-panel__near-icon { width: 42px; height: 42px; padding: 5px; flex: none; border-radius: 50%; background: #00ec97; }
+.wallet-panel__icon { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 10px; background: #eeeef0; color: #3f3f46; }
+.wallet-panel__choice-title { font-size: 14px; font-weight: 600; }
+.wallet-panel__identity { display: grid; gap: 6px; padding: 16px; border: 1px solid #d6e3db; border-radius: 10px; background: #f5f9f6; }
+.wallet-panel__identity-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.wallet-panel__connected { display: inline-flex; align-items: center; gap: 6px; color: #256445; font-size: 12px; font-weight: 600; }
+.wallet-panel__connected span { width: 7px; height: 7px; border-radius: 50%; background: #2d9163; }
+.wallet-panel__account { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.wallet-panel__wallet { color: var(--muted-foreground); font-size: 12px; }
+.wallet-panel__settings { display: contents; }
+.wallet-panel__settings p { margin: 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.4; }
+.wallet-panel__network-control { position: absolute; top: 40px; right: 32px; max-width: 110px; }
+.wallet-panel__network-control select { appearance: none; width: 100%; min-height: 32px; padding: 7px 31px 7px 12px; border: 0; border-radius: 8px; background: #f4f4f5; color: #3f3f46; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.wallet-panel__network-control select:hover { background: #eaeaec; }
+.wallet-panel__network-control select:disabled { opacity: .5; cursor: default; }
+.wallet-panel__network-control svg { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #71717a; pointer-events: none; }
+.wallet-panel__notice, .wallet-panel__error { margin: 0; padding: 10px 12px; border-radius: 7px; font-size: 12px; line-height: 1.5; }
+.wallet-panel__notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #f4f4f5; color: #52525b; }
+.wallet-panel__error { background: #fff2f2; color: #a52828; overflow-wrap: anywhere; }
+.dialog-content .wallet-panel__notice button:not(.primary-button):not(.dialog-close) { flex: none; padding: 3px 5px; min-height: 26px; border: 0; background: transparent; box-shadow: none; color: #52525b; }
+.dialog-content button.wallet-panel__disconnect:not(.primary-button) { justify-self: start; background: #fff; box-shadow: none; }
+@media (max-width: 420px) {
+  .dialog-content.account-dialog { padding: 32px 24px; }
+  .wallet-panel__network-control { top: 32px; right: 24px; }
+}

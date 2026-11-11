@@ -6,7 +6,7 @@ import type { Operation } from '../src/features/table/runtime';
 function fixture(ranges:Array<{startRow:number;endRow:number;startColumn:number;endColumn:number}>,cells:Array<[number,number,string]>) {
   const operation={id:'testnet:dao.testnet:invoice-1'} as Operation;
   const scan=vi.fn(callback=>{cells.forEach(([row,col])=>callback(row,col));});
-  const sheet={getSelection:()=>({getActiveRangeList:()=>ranges.map((range,index)=>({getRange:()=>range,getA1Notation:()=>index?'D20':'B1:B1000000'}))}),getSheet:()=>({getCellMatrix:()=>({forValue:scan})}),getRange:(row:number,col:number)=>({getValue:()=>cells.find(cell=>cell[0]===row&&cell[1]===col)?.[2]})};
+  const sheet={getSelection:()=>({getActiveRangeList:()=>ranges.map((range,index)=>({getRange:()=>range,getA1Notation:()=>index?'D20':'B1:B1000000'}))}),getSheet:()=>({getCellMatrix:()=>({forValue:scan})}),getRange:(row:number,col:number)=>({getRawValue:()=>cells.find(cell=>cell[0]===row&&cell[1]===col)?.[2],getA1Notation:()=>`cell-${row}-${col}`,getFormula:()=>''})};
   const session={getWorkbook:()=>({getActiveSheet:()=>sheet}),tableRuntime:{operations:new Map([['Draft',operation]]),calculating:false}} as unknown as WorkbookSession;
   return {session,operation,scan};
 }
@@ -25,5 +25,12 @@ describe('selection-driven table controls',()=>{
     expect(getTableSelection(null)).toMatchObject({ready:false,operations:[]});
     const {session}=fixture([{startRow:0,endRow:0,startColumn:0,endColumn:0}],[[0,0,'A normal cell']]);
     expect(getTableSelection(session).operations).toEqual([]);
+  });
+  it('limits inspected cell details while retaining the full count for a large selection',()=>{
+    const {session}=fixture([{startRow:0,endRow:999999,startColumn:1,endColumn:1}],Array.from({length:40},(_,row)=>[row,1,'A normal cell']));
+    const selection=getTableSelection(session);
+    expect(selection.cells).toHaveLength(30);
+    expect(selection.cellCount).toBe(40);
+    expect(selection.cells[0]).toMatchObject({address:'cell-0-1',value:'A normal cell'});
   });
 });

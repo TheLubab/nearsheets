@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TableRuntime,formulaResult } from '../src/features/table/runtime';
-import { ValueObjectFactory } from '@univerjs/engine-formula';
+import { TableRuntime } from '../src/features/table/runtime';
 import type { TablePorts } from '../src/features/table/runtime';
-import { executePlan, reviewPlan, reconcileExecution } from '../src/features/table/execution';
+import { executePlan, reviewPlan, reconcileExecution, executionProblem, executionSchema } from '../src/features/table/execution';
 import type { ExecutionJournal } from '../src/features/table/execution';
 import type { WalletController } from '../src/features/wallet/application/wallet-controller';
 import { migrateFormula, migrateDocument } from '../src/features/documents/model/document-migrations';
@@ -24,13 +23,6 @@ function fixture() {
 }
 const transferArgs = ['invoice-1','dao.sputnikv2.testnet','alice.testnet','1.000001','token.testnet','testnet'];
 describe('table runtime and deliberate execution',()=>{
-  it('preserves exact decimal/base-unit strings across Univer facade conversion',()=>{
-    for(const value of ['1000000000000000000000001','0.000000000000000000000001','00123','a"b']) {
-      const encoded=formulaResult(value) as string;
-      const result=ValueObjectFactory.create(encoded);
-      expect(result.isString()).toBe(true);expect(result.getValue()).toBe(value);
-    }
-  });
   it('returns calculable balances and structured proposal ranges using shared deduplicated reads',async()=>{
     const {runtime,view,sign} = fixture();
     expect(await runtime.calculate('NEAR_BALANCE',['alice.testnet','testnet'])).toBe(2.5);
@@ -81,6 +73,9 @@ describe('table runtime and deliberate execution',()=>{
     const journal: ExecutionJournal={};
     await executePlan({plan,wallet,runtime,snapshot:()=>({}),journal:()=>journal,record:async r=>{journal[r.id]=r;}});
     expect(journal[op.id]?.state).toBe('indeterminate');
+    expect(executionProblem(journal[op.id]!)?.recovery).toMatch(/wallet history/);
+    expect(executionSchema.parse(journal[op.id]).technicalDetails).toBe('RPC connection lost');
+    expect(journal[op.id]?.message).toMatch(/outcome is unknown/);
     await expect(executePlan({plan,wallet,runtime,snapshot:()=>({}),journal:()=>journal,record:async()=>{}})).rejects.toThrow(/Reconcile/);
     expect(sign).toHaveBeenCalledTimes(1);runtime.dispose();
   });

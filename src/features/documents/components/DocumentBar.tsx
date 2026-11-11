@@ -1,7 +1,7 @@
 import { Dialog } from '../../../components/ui/dialog';
 import * as Menubar from '@radix-ui/react-menubar';
 import type { ReactNode } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpenIcon } from '@solar-icons/react/linear/folder-open';
 import { DocumentPicker } from './DocumentPicker';
 import { useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
@@ -14,6 +14,7 @@ interface DocumentBarProps {
   workspace: DocumentWorkspace;
   state: WorkspaceState;
   children?:ReactNode;
+  ribbonMenu?: boolean;
 }
 
 function formatSavedAt(iso: string | null): string {
@@ -31,7 +32,7 @@ function formatSavedAt(iso: string | null): string {
  * Document-level actions, deliberately separate from the sheet surface:
  * saving is automatic, while new/rename/export/import are explicit.
  */
-export function DocumentBar({ workspace, state, children }: DocumentBarProps) {
+export function DocumentBar({ workspace, state, children, ribbonMenu }: DocumentBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -144,7 +145,7 @@ export function DocumentBar({ workspace, state, children }: DocumentBarProps) {
             {document?.title ?? "Opening document…"}
           </button>
         )}
-        <button className="document-bar__open" type="button" aria-label="Open a saved workbook" title="Open a saved workbook" onClick={()=>setPickerOpen(true)}><FolderOpen size={16}/></button>
+        <button className="document-bar__open" type="button" aria-label="Open a saved workbook" title="Open a saved workbook" onClick={()=>setPickerOpen(true)}><FolderOpenIcon size={16}/></button>
         <span
           className={`document-bar__save document-bar__save--${state.saveStatus}`}
           role="status"
@@ -156,7 +157,7 @@ export function DocumentBar({ workspace, state, children }: DocumentBarProps) {
       </div>
 
 
-    <Menubar.Root className="app-menubar">
+    <Menubar.Root className={'app-menubar'+(ribbonMenu ? ' app-menubar--ribbon' : '')}>
       <Menubar.Menu><Menubar.Trigger data-document-menu-trigger>File</Menubar.Trigger><Menubar.Portal><Menubar.Content className="menu-content" align="start" sideOffset={3}>
         <Menubar.Item className="menu-item" onSelect={()=>void workspace.createNewDocument()}>New workbook</Menubar.Item>
         <Menubar.Item className="menu-item" onSelect={()=>setPickerOpen(true)}>Open…</Menubar.Item>
@@ -164,7 +165,7 @@ export function DocumentBar({ workspace, state, children }: DocumentBarProps) {
         <Menubar.Item className="menu-item" onSelect={handleImportClick}>Import…</Menubar.Item>
         <Menubar.Separator className="menu-separator"/>
         <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportJson()}>Download JSON workbook</Menubar.Item>
-        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportCsv()}>Download current sheet as CSV</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportCsv()}>Download CSV (underlying values)</Menubar.Item>
         <Menubar.Separator className="menu-separator"/>
         <Menubar.Item className="menu-item" onSelect={()=>setAboutOpen(true)}>About NearSheets</Menubar.Item>
       </Menubar.Content></Menubar.Portal></Menubar.Menu>

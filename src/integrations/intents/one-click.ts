@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { checkNearAccountId } from '../../features/treasury/model/near-account';
 import { parseExactAmount } from '../../features/treasury/model/exact-amount';
+import { invalidInput, unavailable, serviceProblem, staleData } from '../../features/table/problems';
 const tokenSchema = z.object({assetId:z.string(),decimals:z.number().int().min(0).max(24),blockchain:z.string(),symbol:z.string()});
 const units = z.string().regex(/^\d+$/);
 export const quoteSchema = z.object({correlationId:z.string(),timestamp:z.string(),quote:z.object({amountIn:units,amountOut:units,minAmountOut:units,deadline:z.iso.datetime(),timeEstimate:z.number(),depositAddress:z.string().optional()})});
@@ -20,15 +21,18 @@ export function validateAddress(chain:string,address:string): string {
     const leading=address.match(/^1*/)?.[0].length ?? 0;
     if(bytes+leading!==32)throw new Error('Solana address must encode 32 bytes.');return address;
   }
-  throw new Error(`Destination chain ${chain} has no verified address validator in NearSheets.`);
+  throw unavailable(`Destination chain ${chain} has no verified address validator in NearSheets.`);
 }
 /** Public API only. Secret partner credentials require the unresolved server boundary. */
 export class OneClick {
   constructor(readonly baseUrl:string,readonly request:typeof fetch=fetch) {}
   private async json(path:string,init?:RequestInit) {
-    const response=await this.request(`${this.baseUrl.replace(/\/$/,'')}/v0/${path}`,init);
-    if(!response.ok)throw new Error(`Intents request failed (${response.status}).`);
-    return response.json() as Promise<unknown>;
+    let response:Response;
+    try { response=await this.request(`${this.baseUrl.replace(/\/$/,'')}/v0/${path}`,init); }
+    catch(cause) { throw serviceProblem(cause,'Intents'); }
+    if(!response.ok)throw serviceProblem(await response.text(),'Intents',response.status);
+    try { return await response.json() as unknown; }
+    catch(cause) { throw serviceProblem(cause,'Intents',response.status); }
   }
   async tokens(){return z.array(tokenSchema).parse(await this.json('tokens'));}
   async estimate(input:QuoteInput) { return this.quote(input,true); }
@@ -36,10 +40,10 @@ export class OneClick {
   private async quote(input:QuoteInput,dry:boolean) {
     const tokens=await this.tokens();
     const origin=tokens.find(t=>t.assetId===input.originAsset),destination=tokens.find(t=>t.assetId===input.destinationAsset && t.blockchain===input.destinationChain);
-    if(!origin||!destination)throw new Error('Asset/chain is not supported by the current provider catalog.');
+    if(!origin||!destination)throw unavailable('Asset/chain is not supported by the current provider catalog.');
     const amount=parseExactAmount(input.amount,origin.decimals);
-    if(!amount.ok)throw new Error(amount.message);
-    if(amount.amount.baseUnits==='0')throw new Error('Quote input must be positive.');
+    if(!amount.ok)throw invalidInput(amount.message);
+    if(amount.amount.baseUnits==='0')throw invalidInput('Quote input must be positive.');
     const recipient=validateAddress(destination.blockchain,input.recipient),refundTo=validateAddress(origin.blockchain,input.refundTo);
     const slippageTolerance=z.number().int().min(0).max(5000).parse(input.slippageTolerance);
     const body={dry,swapType:'EXACT_INPUT',originAsset:origin.assetId,destinationAsset:destination.assetId,amount:amount.amount.baseUnits,recipient,refundTo,slippageTolerance,depositType:'ORIGIN_CHAIN',recipientType:'DESTINATION_CHAIN',refundType:'ORIGIN_CHAIN'};
@@ -47,7 +51,7 @@ export class OneClick {
     if(dry && response.quote.depositAddress)throw new Error('Estimation unexpectedly returned funding instructions.');
     if(!dry && !response.quote.depositAddress)throw new Error('No deposit address was allocated.');
     if(response.quote.amountIn !== amount.amount.baseUnits)throw new Error('Provider changed the input amount.');
-    if(Date.parse(response.quote.deadline)<=Date.now())throw new Error('The quote has expired. Request another estimate.');
+    if(Date.parse(response.quote.deadline)<=Date.now())throw staleData('The quote has expired. Request another estimate.');
     return {input:body,origin,destination,response};
   }
   async status(depositAddress:string,depositMemo?:string){
