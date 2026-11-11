@@ -1,0 +1,21 @@
+# Dependencies and package manager caches
+node_modules/
+.pnpm-store/
+.references/
+
+# Generated output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+.direnv/
+
+# Logs and operating system files
+*.log
+.DS_Store
+Thumbs.db
