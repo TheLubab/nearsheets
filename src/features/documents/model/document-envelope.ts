@@ -127,6 +127,26 @@ export function renameDocument(
   };
 }
 
+/**
+ * Records which treasury a document belongs to.
+ *
+ * The treasury is metadata, not a connection: changing it does not contact a
+ * network. Draft ids include the treasury account, so an existing workbook's
+ * `TREZU_DRAFT` results change when the treasury changes — which is why the
+ * selection is explicit and saved rather than inferred from a wallet.
+ */
+export function withTreasury(
+  document: DocumentEnvelope,
+  treasury: TreasuryMetadata,
+  now: Date = new Date(),
+): DocumentEnvelope {
+  return {
+    ...document,
+    treasury: { ...treasury },
+    updatedAt: now.toISOString(),
+  };
+}
+
 /** Short, human-readable summary used by document pickers. */
 export interface DocumentSummary {
   documentId: string;

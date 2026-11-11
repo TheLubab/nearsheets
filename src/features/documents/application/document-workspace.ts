@@ -7,6 +7,7 @@ import {
   createBlankDocument,
   createDocumentEnvelope,
   renameDocument,
+  withTreasury,
 } from "../model/document-envelope";
 import type { DocumentRepository } from "../repository/document-repository";
 import type { SaveStatus } from "../session/document-persistence";
@@ -125,6 +126,14 @@ export interface DocumentWorkspace {
   flush(): Promise<void>;
   createNewDocument(): Promise<void>;
   rename(title: string): Promise<void>;
+  /**
+   * Records which treasury the open document belongs to.
+   *
+   * Selecting a treasury is metadata, not a connection: it changes draft
+   * identities and which treasury the read panel targets, and never contacts a
+   * network by itself.
+   */
+  setTreasury(treasury: TreasuryMetadata): Promise<void>;
   importJson(text: string): Promise<void>;
   importCsv(text: string, fileName: string): Promise<void>;
   /** Serializes the current document after flushing pending edits; no file I/O. */
@@ -334,19 +343,52 @@ export function createDocumentWorkspace(
       if (!base) {
         return;
       }
-      const renamed = renameDocument(base, title, now());
-      await repository.save(renamed);
-      // Rebuild persistence around the renamed envelope so later saves keep
-      // the new title; otherwise autosave would write the old one back.
-      const activeSession = session;
-      detachSession();
-      setDocument(renamed);
-      if (activeSession) {
-        attachSession(activeSession, renamed.documentId);
-      }
+      await replaceDocument(renameDocument(base, title, now()));
     } catch (cause) {
       noticeError(
         cause instanceof Error ? cause.message : "The document could not be renamed.",
+      );
+    }
+  };
+
+  /**
+   * Persists a metadata-only change and re-binds autosave to the new envelope.
+   *
+   * Without the re-bind, autosave would keep writing the old title or treasury
+   * back over the change on the next edit.
+   */
+  const replaceDocument = async (next: DocumentEnvelope) => {
+    await repository.save(next);
+    const activeSession = session;
+    detachSession();
+    setDocument(next);
+    if (activeSession) {
+      attachSession(activeSession, next.documentId);
+    }
+  };
+
+  const setTreasuryMetadata = async (next: TreasuryMetadata) => {
+    const current = state.document;
+    if (!current) {
+      return;
+    }
+    if (
+      current.treasury.network === next.network &&
+      current.treasury.accountId === next.accountId
+    ) {
+      return;
+    }
+    try {
+      const base = await settlePendingEdits();
+      if (!base) {
+        return;
+      }
+      await replaceDocument(withTreasury(base, next, now()));
+    } catch (cause) {
+      noticeError(
+        cause instanceof Error
+          ? cause.message
+          : "The document treasury could not be updated.",
       );
     }
   };
@@ -469,6 +511,7 @@ export function createDocumentWorkspace(
     },
     createNewDocument: newDocument,
     rename,
+    setTreasury: setTreasuryMetadata,
     importJson,
     importCsv,
     exportJson,

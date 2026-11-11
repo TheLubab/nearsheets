@@ -64,7 +64,30 @@ Earlier foundation notes continue below.
 
 Verified by tests: exact base units resist double noise; over-precision is refused instead of silently rounded; draft ids stay stable across moves and are shared by the model and `TREZU_DRAFT`; duplicate references are reported; Intents drafts start unquoted; unknown assets never produce a guessed precision; concurrent lookups deduplicate and stale replies cannot overwrite newer ones; every custom function runs without I/O; the document envelope records catalog version 2 and round trips the three-sheet starter.
 
-Not implemented yet: wallet UI, treasury reads, proposal submission, and Intents execution. Installed dependencies now cover the workbook shell, environment validation, NEAR connection/RPC, Dexie persistence, `decimal.js` exact amounts and `fake-indexeddb` tests; TanStack Query is not installed yet.
+Not implemented yet: proposal submission and Intents execution. Installed dependencies now cover the workbook shell, environment validation, NEAR connection/RPC, Dexie persistence, `decimal.js` exact amounts, `@tanstack/react-query` remote reads and `fake-indexeddb` tests.
+
+### Milestone 4: wallet UI and treasury reads (complete)
+
+- `src/integrations/near/network.ts`: the `NearNetwork` union and the public RPC URL rule in one place, so configuration, wallet and reads cannot drift.
+- `src/integrations/near/client.ts`: provider factory takes an optional network. A `VITE_NEAR_RPC_URL` override applies only to the configured network; switching the wallet network uses that network's public RPC instead of sending calls to the wrong chain. Constructing a provider performs no query.
+- `src/integrations/wallet/gateway.ts`: `WalletGateway` boundary over NEAR Connect. Connecting reads the first account and wallet identity; a dismissed selector becomes `WalletCancelledError`, while manifest or network failures keep their own message. `onSignOut` forwards a wallet-initiated end of session and `dispose()` removes the connector listener. The connector is created inside `connect`, so importing the gateway fetches no manifest.
+- `src/integrations/trezu/treasury-rpc-source.ts`: `get_policy`, `get_last_proposal_id`, `get_proposals` and `viewAccount` reads through a structurally-declared `NearViewClient`. It has no sign or submit path. Only native NEAR balance is reported; token balances are not guessed.
+- `src/integrations/trezu/demo-treasury-source.ts`: deterministic sample policy, proposals and balances for account ids containing `demo`. It is development-only and never silently replaces a real read.
+- `src/features/treasury/model/treasury-reads.ts`: strict parsing of Sputnik policy, proposals and balances. Contract-shaped JSON is untrusted; unknown statuses, non-integer amounts and malformed kinds are errors, not defaults. Permissions are evaluated locally with the contract's wildcard rules, and token-weighted roles report `unknown` instead of pretending to know a balance.
+- `src/features/treasury/application/treasury-reader.ts`: read port plus reader. Proposals are fetched from the latest page, clamped to 100, sorted newest first, and failures name the treasury. Each read is validated before reaching React.
+- `src/features/treasury/application/treasury-source.ts`: chooses the source per account (demo vs RPC) and reports integration readiness. A configured Trezu or Intents URL is reported as `configured-no-adapter`, never as enabled.
+- `src/features/treasury/application/use-treasury-overview.ts`: TanStack Query reads keyed by network and account. Queries are disabled without a treasury account, retries are off, and a disabled query reports `idle` rather than a loading state that never resolves.
+- `src/features/wallet/application/wallet-controller.ts`: framework-free connection state. A cancelled selector returns to disconnected with a dismissible notice; a failed sign-out drops the untrustworthy session; a network change disconnects and replaces the gateway; a duplicate connect while connecting is ignored.
+- `src/features/wallet/components/WalletPanel.tsx`, `src/features/treasury/components/TreasuryPanel.tsx`: wallet connect/disconnect, wallet network switch, treasury account selection, treasury network, balances, policy/roles, recent proposals and the integrations list. The treasury panel reads only after a treasury is saved; local editing is untouched by either panel.
+- `src/app/app-providers.tsx`: one wallet controller and per-network reader cache above the document UI, plus one `QueryClient`.
+- `src/features/documents/model/document-envelope.ts` / `document-workspace.ts`: `withTreasury` and `setTreasury`. The treasury is saved metadata; autosave is re-bound so later edits cannot write the previous treasury back, and an unchanged selection does not rewrite the document.
+- `.env.example` notes that Trezu and Intents URLs remain configuration-only.
+
+Verified by tests: policy/proposal/balance parsing rejects malformed payloads and unknown statuses; permission evaluation follows wildcards and distinguishes denial from undecided token roles; proposals are read from the latest page, clamped and sorted; RPC reads use view methods only and fail clearly on an empty result; wallet cancellation is recoverable and a real failure is not swallowed; a wallet sign-out clears the session; a network switch disconnects first; demo data is routed per account and never used when disabled; treasury selection persists and survives later autosaves.
+
+Not browser-verified in this milestone: the wallet selector needs a real extension or hosted manifest, and the treasury panel's visuals need a human check.
+
+Not implemented yet: proposal submission, approval/rejection, and Intents execution.
 
 ## Tasks in dependency order
 
@@ -73,7 +96,7 @@ Implement only the task authorized by the user. Each item should remain reviewab
 1. ~~**Workbook shell.**~~ Done above.
 2. ~~**Local documents.**~~ Done above.
 3. ~~**Custom formulas and action drafts.**~~ Done above.
-4. **Wallet UI and treasury reads.** Consume existing factories through a shared React provider. Add mocked policy/proposal/balance reads, network selection and permission display. Optional configured endpoints must have a real adapter before showing as available. Done when missing optional configuration allows local use and wallet cancellation is recoverable. References: `wallets.md`, `near.md`, `sputnik.md`, `trezu.md`.
+4. ~~**Wallet UI and treasury reads.**~~ Done above.
 5. **Proposal actions.** Preview and submit one proposal per payment row; add approve/reject with policy checks. Reconcile transaction outcomes and proposal status. Done when a retry cannot silently duplicate a known submission and approval is distinct from payment completion. Test with mocks.
 6. **Intents execution design and adapter.** Keep route/quote/stage fields in draft schemas from task 3 onward. Before implementing execution, resolve the quote-expiry-versus-DAO-approval design using upstream Trezu and Intents sources. Ask the user if requirements conflict. Then implement selected routes, deposits, settlement and refunds using mocks. This dependency order does not defer Intents out of the product. References: `near-intents.md`, `trezu.md`, `sputnik.md`.
 
@@ -87,6 +110,9 @@ Implement only the task authorized by the user. Each item should remain reviewab
 - Formula recalculation must never sign or submit. Register custom functions through the preset's `formula.function` option, not by patching the session after mount.
 - When a document schema field changes, bump `SCHEMA_VERSION` and add exactly one `DocumentMigration` per step. Never edit a released migration.
 - Not yet built: a document picker or delete UI, cross-document search, remote sync. The repository interface already supports them; IndexedDB remains a draft store, not a backup.
+- Treasury reads are view calls only. Keep the separation: adding a proposal is a separate adapter with its own preview and confirmation, never a read path.
+- The treasury recorded on a document is metadata. The wallet network is separate; the panel warns when they differ and never silently reads the other network.
+- Token-weighted roles report `unknown` until a balance source exists. Do not upgrade that to `allowed` by guessing.
 - The production bundle is a single large chunk (Univer). Code splitting and a chunk-size budget are worth revisiting once routes or lazy panels exist, but are not a blocker.
 
 ## Configuration rules

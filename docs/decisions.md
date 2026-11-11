@@ -26,6 +26,8 @@ Package versions, styling system, and any future Excel conversion library remain
 - Prefer one proposal per payment row initially. A complex row may need multiple execution stages; retain their relationship to the originating action draft. Batch wallet signing does not imply atomic execution. Revisit grouping if a required Intents workflow needs different proposal semantics.
 - Formulas may produce structured action drafts as well as calculations and read-only data. Drafts must capture treasury/network, asset identity, exact amount, recipient, action type and relevant execution parameters. Signing/submission remains an explicit operation outside recalculation.
 
+Implementation notes (2026-11-11, milestone 4): the wallet boundary is `src/integrations/wallet/gateway.ts`; framework-free session state lives in `src/features/wallet/application/wallet-controller.ts`. A dismissed wallet selector becomes a `WalletCancelledError` and returns to disconnected with a dismissible notice, so cancellation is recoverable without a reload. Wallet network and treasury network are separate: a document records its treasury network, the wallet has its own, and the treasury panel warns on a mismatch instead of reading the other chain. Treasury reads go directly to the DAO contract through view calls (`get_policy`, `get_last_proposal_id`, `get_proposals`, `viewAccount`). A configured `VITE_TREZU_API_URL` or `VITE_INTENTS_API_URL` is reported as configured but not wired, because a URL is not an adapter. Permissions are computed from policy plus account id; token-weighted roles stay `unknown` because balances are not read.
+
 ## NEAR Intents integration requirements
 
 Treat quotes, deposits, intent execution, destination settlement and refunds as distinct stages. Record provider/route identity, quote expiry, slippage, fees, destination recipient, refund recipient, proposal IDs, deposits and transaction/intent references. Separate governance approval from execution success and destination settlement.
@@ -39,7 +41,7 @@ Use mocked quote, expiry, execution, partial failure and refund outcomes in deve
 ## Supporting libraries
 
 - `near-api-js`: RPC reads and transaction utilities; the connected wallet handles user signing.
-- TanStack Query: remote data caching and refresh handling. Use a shared data layer for formula and UI reads; explicitly control transaction retries and refresh behavior.
+- TanStack Query: remote data caching and refresh handling. Use a shared data layer for formula and UI reads; explicitly control transaction retries and refresh behavior. Installed at 5.107.1 for treasury reads; automatic retries are off.
 - Dexie: IndexedDB persistence behind the document repository adapter.
 - Zod: runtime validation of imports, configuration and action inputs.
 - T3 Env (`@t3-oss/env-core`) with Zod: centralized typed environment validation. Optional integrations should activate only with complete validated configuration and an implemented adapter; missing configuration must not block local use. Public browser config must never contain service secrets.

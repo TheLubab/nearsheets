@@ -9,9 +9,15 @@ import { WorkbookEditor } from "../features/spreadsheet/components/WorkbookEdito
 import type { WorkbookSession } from "../features/spreadsheet/univer/create-workbook-session";
 import type { TreasuryMetadata } from "../features/documents/model/document-envelope";
 import { DraftReview } from "../features/treasury/components/DraftReview";
+import { TreasuryPanel } from "../features/treasury/components/TreasuryPanel";
+import { useTreasuryOverview } from "../features/treasury/application/use-treasury-overview";
+import type { TreasuryTarget } from "../features/treasury/model/treasury-reads";
+import { useWalletState } from "../features/wallet/application/use-wallet-state";
+import { WalletPanel } from "../features/wallet/components/WalletPanel";
+import { useIntegrations } from "./app-providers";
 
 /** Treasury context recorded with new documents. No treasury is connected yet. */
-const treasury: TreasuryMetadata = {
+const initialTreasury: TreasuryMetadata = {
   network: env.VITE_NEAR_NETWORK,
   accountId: null,
 };
@@ -32,11 +38,25 @@ export function App() {
   const [workspace] = useState(() =>
     createDocumentWorkspace({
       repository: repositoryRef.current!,
-      treasury,
+      treasury: initialTreasury,
     }),
   );
   const state = useWorkspaceState(workspace);
   const detachRef = useRef<(() => void) | null>(null);
+  const { wallet, readerFor, statuses } = useIntegrations();
+  const walletState = useWalletState(wallet);
+
+  const currentDocument = state.document;
+  const documentTreasury = currentDocument?.treasury ?? initialTreasury;
+  const reader = readerFor(documentTreasury.network);
+  const treasuryTarget: TreasuryTarget | null = documentTreasury.accountId
+    ? { network: documentTreasury.network, accountId: documentTreasury.accountId }
+    : null;
+
+  // `key` on the panel also resets the query cache to the same key, so one
+  // document's treasury is never shown for another. Reads stay disabled until
+  // the document has a treasury account.
+  const overview = useTreasuryOverview(reader, treasuryTarget);
 
   useEffect(() => {
     void workspace.start();
@@ -83,20 +103,27 @@ export function App() {
             <p>Plan and reconcile community finances in a spreadsheet.</p>
           </div>
         </div>
-        <span className="app-shell__badge" title="Selected NEAR network">
-          NEAR {env.VITE_NEAR_NETWORK}
+        <span
+          className="app-shell__badge"
+          title="Network of the open document's treasury"
+        >
+          NEAR {documentTreasury.network}
         </span>
       </header>
 
       <DocumentBar workspace={workspace} state={state} />
 
+      <div className="app-shell__integrations">
+        <WalletPanel wallet={wallet} state={walletState} />
+      </div>
+
       <main className="app-shell__main">
         <div className="app-shell__workspace">
-          {state.status === "ready" && state.document ? (
+          {state.status === "ready" && currentDocument ? (
             <WorkbookEditor
-              key={state.document.documentId}
-              documentId={state.document.documentId}
-              initialWorkbook={state.document.workbook}
+              key={currentDocument.documentId}
+              documentId={currentDocument.documentId}
+              initialWorkbook={currentDocument.workbook}
               onSessionReady={handleSessionReady}
             />
           ) : (
@@ -110,14 +137,34 @@ export function App() {
               )}
             </div>
           )}
-          {state.status === "ready" && state.document ? (
+          {state.status === "ready" && currentDocument ? (
             <DraftReview
-              key={state.document.documentId}
+              key={currentDocument.documentId}
               getSession={() => workspace.getSession()}
-              treasury={state.document.treasury}
+              treasury={currentDocument.treasury}
             />
           ) : null}
         </div>
+
+        {state.status === "ready" && currentDocument ? (
+          <aside className="app-shell__side">
+            <TreasuryPanel
+              key={currentDocument.documentId}
+              treasury={currentDocument.treasury}
+              accountId={walletState.connection?.accountId ?? null}
+              walletNetwork={walletState.connection ? walletState.network : null}
+              overview={overview}
+              statuses={statuses}
+              onSelectTreasury={(target) => {
+                // Persist metadata only; the panel's own query reads afterwards.
+                void workspace.setTreasury({
+                  network: target.network,
+                  accountId: target.accountId,
+                });
+              }}
+            />
+          </aside>
+        ) : null}
       </main>
     </div>
   );

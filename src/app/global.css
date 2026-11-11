@@ -92,6 +92,33 @@ body {
   padding-top: 0;
 }
 
+/* Wallet strip between the document bar and the editor. */
+.app-shell__integrations {
+  padding: 8px 20px 0;
+}
+
+/* Side column: treasury reads stay visible while the sheet is edited. */
+.app-shell__side {
+  flex: 0 0 380px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  margin-left: 12px;
+}
+
+@media (max-width: 1100px) {
+  .app-shell__main {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .app-shell__side {
+    flex: none;
+    margin-left: 0;
+    margin-top: 12px;
+  }
+}
+
 /*
  * Editor plus the draft review panel. The panel is a fixed-height strip so the
  * spreadsheet keeps the remaining space instead of being squeezed by results.
@@ -381,4 +408,323 @@ body {
 
 .workbook-editor__overlay [role="alert"] {
   color: #b02a37;
+}
+/* ------------------------------------------------------------------ */
+/* Wallet strip                                                        */
+/* ------------------------------------------------------------------ */
+
+.wallet-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  font-size: 0.82rem;
+}
+
+.wallet-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.wallet-panel__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #98a6b8;
+}
+
+.wallet-panel__dot--on {
+  background: #2f9e44;
+}
+
+.wallet-panel__account {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34ch;
+}
+
+.wallet-panel__wallet,
+.wallet-panel__network {
+  color: var(--app-muted);
+  font-size: 0.78rem;
+}
+
+.wallet-panel__network {
+  padding: 1px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wallet-panel button,
+.treasury-panel button {
+  padding: 4px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-background);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.wallet-panel button:hover:not(:disabled),
+.treasury-panel button:hover:not(:disabled) {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+}
+
+.wallet-panel button:disabled,
+.treasury-panel button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.wallet-panel__network-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--app-muted);
+  font-size: 0.78rem;
+}
+
+.wallet-panel__network-select select,
+.treasury-panel__picker select,
+.treasury-panel__picker input {
+  padding: 3px 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.wallet-panel__hint {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.wallet-panel__notice,
+.treasury-panel__notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 0 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #eef4fb;
+  color: #14508a;
+  font-size: 0.78rem;
+}
+
+.wallet-panel__notice button {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.wallet-panel__error,
+.treasury-panel__error {
+  margin: 2px 0 0;
+  color: #b02a37;
+  font-size: 0.78rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Treasury panel                                                      */
+/* ------------------------------------------------------------------ */
+
+.treasury-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  font-size: 0.8rem;
+}
+
+.treasury-panel__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.treasury-panel__source {
+  margin-left: auto;
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.treasury-panel__picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.treasury-panel__picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--app-muted);
+  font-size: 0.72rem;
+}
+
+.treasury-panel__picker input {
+  min-width: 20ch;
+  font-size: 0.8rem;
+}
+
+.treasury-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.treasury-panel__section h3 {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+
+.treasury-panel__section p {
+  margin: 0 0 4px;
+  line-height: 1.45;
+}
+
+.treasury-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.treasury-panel__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #f0f3f8;
+}
+
+.treasury-panel__list li:last-child {
+  border-bottom: none;
+}
+
+.treasury-panel__amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.treasury-panel__muted {
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.treasury-panel__role {
+  min-width: 8ch;
+  font-weight: 600;
+}
+
+.treasury-panel__permissions-list {
+  color: var(--app-muted);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.treasury-panel__permissions ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.treasury-panel__proposal-id {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.treasury-panel__status {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--app-background);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.treasury-panel__status--Approved {
+  background: #e6f4ea;
+  color: #1e6b33;
+}
+
+.treasury-panel__status--Rejected,
+.treasury-panel__status--Failed {
+  background: #fdeaea;
+  color: #8a1c27;
+}
+
+.treasury-panel__status--InProgress {
+  background: #e7f1fb;
+  color: #14508a;
+}
+
+.treasury-panel__integrations summary {
+  cursor: pointer;
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.treasury-panel__integrations ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.treasury-panel__integrations li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.treasury-panel__integration {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--app-background);
+}
+
+.treasury-panel__integration--available {
+  background: #e6f4ea;
+  color: #1e6b33;
+}
+
+.treasury-panel__integration--configured-no-adapter {
+  background: #fff4e0;
+  color: #8a5300;
 }

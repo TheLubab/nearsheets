@@ -435,4 +435,48 @@ describe("document workspace", () => {
     await workspace.flush();
     expect((await repository.get(secondId))?.workbook.name).toBe("Live edit");
   });
+
+  it("records a treasury selection as saved metadata", async () => {
+    const repository = new MemoryDocumentRepository();
+    const workspace = createWorkspace(repository);
+    await workspace.start();
+
+    await workspace.setTreasury({ network: "mainnet", accountId: "my-dao.near" });
+
+    expect(workspace.getState().document?.treasury).toEqual({
+      network: "mainnet",
+      accountId: "my-dao.near",
+    });
+    expect((await repository.getMostRecent())?.treasury.accountId).toBe("my-dao.near");
+  });
+
+  it("keeps later autosaves on the selected treasury", async () => {
+    const repository = new MemoryDocumentRepository();
+    const workspace = createWorkspace(repository);
+    await workspace.start();
+    await workspace.setTreasury({ network: "testnet", accountId: "dao.testnet" });
+
+    // Autosave is re-bound to the updated envelope; an edit must not write the
+    // previous treasury back.
+    const documentId = workspace.getState().document!.documentId;
+    const fake = sessionWithWorkbook();
+    workspace.attachSession(fake.session, documentId);
+    fake.edit({ name: "After treasury" });
+    await workspace.flush();
+
+    const stored = await repository.get(documentId);
+    expect(stored?.treasury.accountId).toBe("dao.testnet");
+    expect(stored?.workbook.name).toBe("After treasury");
+  });
+
+  it("does not rewrite the document when the treasury is unchanged", async () => {
+    const repository = new MemoryDocumentRepository();
+    const workspace = createWorkspace(repository);
+    await workspace.start();
+    const original = workspace.getState().document!;
+
+    await workspace.setTreasury({ network: original.treasury.network, accountId: null });
+
+    expect(workspace.getState().document).toBe(original);
+  });
 });
