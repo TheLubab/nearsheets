@@ -62,6 +62,7 @@ function routingSource(options: CreateTreasuryReaderOptions): TreasuryReadSource
     readProposals: (target, page) => pick(target).readProposals(target, page),
     readLastProposalId: (target) => pick(target).readLastProposalId(target),
     readBalances: (target) => pick(target).readBalances(target),
+    readProposal: (target, id) => pick(target).readProposal(target, id),
   };
 }
 

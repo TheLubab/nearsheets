@@ -205,6 +205,10 @@ describe("document validation and migration", () => {
         toVersion: 1,
         migrate: (value) => ({ ...value, title: "Migrated title" }),
       },
+      {
+        toVersion: 2,
+        migrate: (value) => ({ ...value, submissions: {} }),
+      },
     ]);
 
     expect(result.ok).toBe(true);

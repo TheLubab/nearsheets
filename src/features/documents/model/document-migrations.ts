@@ -6,11 +6,6 @@ import { validateDocument } from "./document-schema";
 /**
  * Explicit, ordered document migrations.
  *
- * This is the first released schema, so the registry is empty: there is no
- * older stored format to convert. The runner still exists because the versioned
- * envelope promises a defined upgrade path, and because stored documents must
- * fail predictably rather than be half-read when a future version adds one.
- *
  * Rules for adding a migration:
  * - A migration receives the *unvalidated* raw value and returns the next
  *   shape. It must not mutate its input.
@@ -24,7 +19,19 @@ export interface DocumentMigration {
   migrate(document: Record<string, unknown>): Record<string, unknown>;
 }
 
-export const documentMigrations: readonly DocumentMigration[] = [];
+export const documentMigrations: readonly DocumentMigration[] = [
+  {
+    toVersion: 2,
+    /**
+     * Version 2 adds the local submission journal.
+     *
+     * An older document has no record of submissions, so it starts with an
+     * empty journal. Inventing entries would claim payments were proposed that
+     * were never recorded.
+     */
+    migrate: (document) => ({ ...document, submissions: {} }),
+  },
+];
 
 export type MigrationResult =
   | { ok: true; document: DocumentEnvelope; migratedFrom: number | null }

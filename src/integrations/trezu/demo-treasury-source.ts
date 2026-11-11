@@ -131,6 +131,11 @@ export function createDemoTreasurySource(): TreasuryReadSource {
       return proposals.length;
     },
 
+    async readProposal(target, id: number) {
+      requireDemo(target);
+      return proposals.find((proposal) => (proposal as { id: number }).id === id) ?? null;
+    },
+
     async readBalances(target) {
       requireDemo(target);
       return [

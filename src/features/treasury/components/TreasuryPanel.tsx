@@ -15,6 +15,8 @@ import {
 import type { TreasuryPolicy, TreasuryTarget } from "../model/treasury-reads";
 import type { IntegrationStatus } from "../application/treasury-source";
 import type { TreasuryOverview } from "../application/use-treasury-overview";
+import type { ProposalActions } from "../application/use-proposal-actions";
+import { ProposalVoteActions } from "./DraftReview";
 
 interface TreasuryPanelProps {
   /** Treasury recorded on the document. */
@@ -26,6 +28,8 @@ interface TreasuryPanelProps {
   overview: TreasuryOverview;
   statuses: IntegrationStatus[];
   onSelectTreasury: (target: TreasuryTarget) => void;
+  /** Explicit approve/reject controls; disabled until the policy is read. */
+  proposalActions: ProposalActions;
 }
 
 function targetFor(treasury: TreasuryMetadata): TreasuryTarget | null {
@@ -110,6 +114,7 @@ export function TreasuryPanel({
   overview,
   statuses,
   onSelectTreasury,
+  proposalActions,
 }: TreasuryPanelProps) {
   const target = targetFor(treasury);
   const [draftAccount, setDraftAccount] = useState(treasury.accountId ?? "");
@@ -273,6 +278,13 @@ export function TreasuryPanel({
                       <span className="treasury-panel__muted">
                         {new Date(proposal.submittedAt).toLocaleDateString()}
                       </span>
+                      {overview.policy.status === "ready" ? (
+                        <ProposalVoteActions
+                          proposal={proposal}
+                          policy={overview.policy.data}
+                          actions={proposalActions}
+                        />
+                      ) : null}
                     </li>
                   ))}
                 </ul>

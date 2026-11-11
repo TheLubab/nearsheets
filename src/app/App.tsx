@@ -11,6 +11,7 @@ import type { TreasuryMetadata } from "../features/documents/model/document-enve
 import { DraftReview } from "../features/treasury/components/DraftReview";
 import { TreasuryPanel } from "../features/treasury/components/TreasuryPanel";
 import { useTreasuryOverview } from "../features/treasury/application/use-treasury-overview";
+import { useProposalActions } from "../features/treasury/application/use-proposal-actions";
 import type { TreasuryTarget } from "../features/treasury/model/treasury-reads";
 import { useWalletState } from "../features/wallet/application/use-wallet-state";
 import { WalletPanel } from "../features/wallet/components/WalletPanel";
@@ -57,6 +58,15 @@ export function App() {
   // document's treasury is never shown for another. Reads stay disabled until
   // the document has a treasury account.
   const overview = useTreasuryOverview(reader, treasuryTarget);
+
+  const proposalActions = useProposalActions({
+    wallet,
+    reader,
+    treasury: documentTreasury,
+    journal: currentDocument?.submissions ?? {},
+    recordSubmission: (record) => workspace.recordSubmission(record),
+    onProposalsChanged: overview.refresh,
+  });
 
   useEffect(() => {
     void workspace.start();
@@ -142,6 +152,8 @@ export function App() {
               key={currentDocument.documentId}
               getSession={() => workspace.getSession()}
               treasury={currentDocument.treasury}
+              policy={overview.policy.status === "ready" ? overview.policy.data : null}
+              actions={proposalActions}
             />
           ) : null}
         </div>
@@ -155,6 +167,7 @@ export function App() {
               walletNetwork={walletState.connection ? walletState.network : null}
               overview={overview}
               statuses={statuses}
+              proposalActions={proposalActions}
               onSelectTreasury={(target) => {
                 // Persist metadata only; the panel's own query reads afterwards.
                 void workspace.setTreasury({

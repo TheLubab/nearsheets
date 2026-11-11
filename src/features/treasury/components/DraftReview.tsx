@@ -10,6 +10,14 @@ import {
   createAssetLookup,
   createStaticAssetSource,
 } from "../formulas/asset-lookup";
+import type { ProposalActions } from "../application/use-proposal-actions";
+import type {
+  TreasuryPolicy,
+  TreasuryProposal,
+} from "../model/treasury-reads";
+import type { SubmissionRecord } from "../model/proposal-submissions";
+import { canSubmit, submissionEligibility } from "../model/proposal-submissions";
+import { formatNearBaseUnits } from "../model/treasury-reads";
 
 export interface DraftReviewProps {
   /**
@@ -18,6 +26,9 @@ export interface DraftReviewProps {
    */
   getSession: () => WorkbookSession | null;
   treasury: TreasuryMetadata;
+  /** Policy of the saved treasury, or `null` while it has not been read. */
+  policy: TreasuryPolicy | null;
+  actions: ProposalActions;
 }
 
 interface ReviewState {
@@ -27,20 +38,37 @@ interface ReviewState {
 
 const EMPTY_REVIEW: ReviewState = { collected: null, assets: {} };
 
+function recordStatusLabel(record: SubmissionRecord): string {
+  switch (record.status) {
+    case "submitted":
+      return `Proposal #${record.proposalId}`;
+    case "submitting":
+      return "Submitting…";
+    case "unknown":
+      return "Result unknown";
+    case "failed":
+      return "Failed";
+    case "not-submitted":
+      return "Not submitted";
+  }
+}
+
 /**
- * Explicit review of payment rows as action drafts.
+ * Payment drafts, with a deliberate two-step submission.
  *
- * This is a read-only check: it reads cell values and validates them. It never
- * writes to the sheet, signs or submits. Submission remains a later, separate
- * task, so the panel is deliberately labelled as a check rather than a send.
- *
- * App remounts this panel per document (`key={documentId}`), so switching
- * documents cannot leave another document's payments on screen and each panel
- * gets its own asset lookup.
+ * Checking reads cell values and validates them. Preparing shows exactly what
+ * would be proposed; only the explicit Confirm button asks the wallet to sign.
+ * Recalculation, opening the document or checking again never submits.
  */
-export function DraftReview({ getSession, treasury }: DraftReviewProps) {
+export function DraftReview({
+  getSession,
+  treasury,
+  policy,
+  actions,
+}: DraftReviewProps) {
   const [review, setReview] = useState<ReviewState>(EMPTY_REVIEW);
   const lookupRef = useRef<AssetLookup | null>(null);
+  const { state } = actions;
 
   // One lookup per panel lifetime, disposed with it. The static source knows
   // only native NEAR, so an unknown asset shows "unknown" instead of a guessed
@@ -70,8 +98,6 @@ export function DraftReview({ getSession, treasury }: DraftReviewProps) {
       return;
     }
     for (const assetId of assetIds) {
-      // Recording a lookup state is what surfaces loading/ready/error; the
-      // draft amount itself is already validated.
       void lookup.get(assetId);
     }
   };
@@ -79,6 +105,10 @@ export function DraftReview({ getSession, treasury }: DraftReviewProps) {
   const collected = review.collected;
   const drafts: ActionDraft[] = collected?.drafts ?? [];
   const issues: DraftIssue[] = collected?.issues ?? [];
+
+  const preview = state.preview?.draft.id
+    ? drafts.find((draft) => draft.id === state.preview?.draft.id) ?? state.preview?.draft
+    : null;
 
   return (
     <section className="draft-review" aria-label="Payment drafts">
@@ -88,6 +118,29 @@ export function DraftReview({ getSession, treasury }: DraftReviewProps) {
           Check payments
         </button>
       </div>
+
+      {state.notice ? (
+        <p
+          className={
+            state.notice.kind === "info"
+              ? "draft-review__notice"
+              : state.notice.kind === "cancelled"
+                ? "draft-review__hint"
+                : "draft-review__problem"
+          }
+          role={state.notice.kind === "error" ? "alert" : "status"}
+        >
+          {state.notice.message}
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={actions.dismissNotice}
+            className="draft-review__dismiss"
+          >
+            ×
+          </button>
+        </p>
+      ) : null}
 
       {collected === null ? (
         <p className="draft-review__hint">
@@ -112,6 +165,12 @@ export function DraftReview({ getSession, treasury }: DraftReviewProps) {
             <ul className="draft-review__list">
               {drafts.map((draft) => {
                 const assetState = review.assets[draft.asset.assetId];
+                const record = actions.recordFor(draft);
+                const eligibility = submissionEligibility(record);
+                const busy = state.busyDraftId === draft.id;
+                const submitDisabled =
+                  busy || policy === null || !canSubmit(eligibility);
+
                 return (
                   <li key={draft.id}>
                     <span className="draft-review__ref">{draft.reference}</span>
@@ -126,6 +185,44 @@ export function DraftReview({ getSession, treasury }: DraftReviewProps) {
                         {assetState.error}
                       </span>
                     ) : null}
+
+                    {record ? (
+                      <span
+                        className={`draft-review__record draft-review__record--${eligibility}`}
+                        title={record.note ?? undefined}
+                      >
+                        {recordStatusLabel(record)}
+                      </span>
+                    ) : null}
+
+                    <span className="draft-review__row-actions">
+                      {eligibility === "needs-reconcile" ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void actions.reconcileSubmission(draft)}
+                        >
+                          {busy ? "Reconciling…" : "Reconcile"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={submitDisabled}
+                          onClick={() => {
+                            if (policy) {
+                              actions.beginSubmission(draft, policy);
+                            }
+                          }}
+                          title={
+                            policy === null
+                              ? "The treasury policy has not been read yet."
+                              : undefined
+                          }
+                        >
+                          {eligibility === "retry" ? "Prepare retry" : "Prepare proposal"}
+                        </button>
+                      )}
+                    </span>
                   </li>
                 );
               })}
@@ -141,6 +238,146 @@ export function DraftReview({ getSession, treasury }: DraftReviewProps) {
           ) : null}
         </div>
       )}
+
+      {state.preview && preview ? (
+        <SubmissionConfirmation
+          actions={actions}
+          preview={state.preview}
+          busy={state.busyDraftId === preview.id}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function SubmissionConfirmation({
+  actions,
+  preview,
+  busy,
+}: {
+  actions: ProposalActions;
+  preview: NonNullable<ProposalActions["state"]["preview"]>;
+  busy: boolean;
+}) {
+  const blocked = preview.blockers.length > 0;
+  return (
+    <div className="proposal-confirm" role="dialog" aria-label="Confirm proposal">
+      <h3>Confirm proposal</h3>
+      <dl>
+        <dt>Treasury</dt>
+        <dd>
+          {preview.treasury.accountId} ({preview.treasury.network})
+        </dd>
+        <dt>Description</dt>
+        <dd>{preview.description}</dd>
+        <dt>Recipient</dt>
+        <dd>{preview.draft.recipient}</dd>
+        <dt>Amount</dt>
+        <dd>
+          {preview.draft.amount.display} {preview.draft.asset.symbol}
+        </dd>
+        <dt>Proposal bond</dt>
+        <dd>
+          {formatNearBaseUnits(preview.bondBaseUnits)} NEAR (attached to the
+          contract call)
+        </dd>
+        <dt>Signing account</dt>
+        <dd>{preview.accountId ?? "No wallet connected"}</dd>
+        <dt>Reference</dt>
+        <dd>{preview.draft.reference}</dd>
+      </dl>
+
+      {preview.warnings.map((warning) => (
+        <p key={warning} className="proposal-confirm__warning">
+          {warning}
+        </p>
+      ))}
+      {preview.blockers.map((blocker) => (
+        <p key={blocker} className="proposal-confirm__blocker" role="alert">
+          {blocker}
+        </p>
+      ))}
+
+      <p className="proposal-confirm__hint">
+        This creates one DAO proposal. It does not approve it, and the payment is
+        not complete until the DAO executes the approved proposal.
+      </p>
+
+      <div className="proposal-confirm__actions">
+        <button type="button" onClick={actions.cancelPreview} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void actions.confirmSubmission()}
+          disabled={busy || blocked}
+        >
+          {busy ? "Waiting for wallet…" : "Sign and submit"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Approve/reject controls for one proposal in the treasury panel. */
+export function ProposalVoteActions({
+  proposal,
+  policy,
+  actions,
+}: {
+  proposal: TreasuryProposal;
+  policy: TreasuryPolicy;
+  actions: ProposalActions;
+}) {
+  const preview =
+    actions.state.votePreview?.proposalId === proposal.id
+      ? actions.state.votePreview
+      : null;
+  const busy = actions.state.busyProposalId === proposal.id;
+
+  if (proposal.status !== "InProgress") {
+    return null;
+  }
+
+  return (
+    <span className="treasury-panel__votes">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => actions.beginVote(proposal, "VoteApprove", policy)}
+      >
+        Approve
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => actions.beginVote(proposal, "VoteReject", policy)}
+      >
+        Reject
+      </button>
+      {preview ? (
+        <span className="treasury-panel__vote-confirm">
+          {preview.description}?{" "}
+          {preview.blockers.length > 0 ? (
+            <span className="treasury-panel__error">{preview.blockers.join(" ")}</span>
+          ) : null}
+          {preview.warnings.map((warning) => (
+            <span key={warning} className="treasury-panel__muted">
+              {warning}
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => void actions.confirmVote(proposal)}
+            disabled={busy || preview.blockers.length > 0}
+          >
+            {busy ? "Waiting for wallet…" : "Sign vote"}
+          </button>
+          <button type="button" onClick={actions.cancelPreview} disabled={busy}>
+            Cancel
+          </button>
+        </span>
+      ) : null}
+    </span>
   );
 }

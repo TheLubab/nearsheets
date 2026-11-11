@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import { isWorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
+import { validateSubmissionRecord } from "../../treasury/model/proposal-submissions";
+import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 import {
   DOCUMENT_FORMAT,
   SCHEMA_VERSION,
@@ -29,6 +31,34 @@ const workbookSchema = z.custom<WorkbookSnapshot>(
   "Not a loadable workbook snapshot",
 );
 
+/**
+ * Submission journal: each entry is validated, and its key must match its own
+ * treasury and draft. A corrupt entry rejects the document rather than being
+ * dropped, because a silently missing record would permit a duplicate payment.
+ */
+const submissionsSchema = z.record(z.string(), z.unknown()).transform(
+  (entries, ctx): Record<string, SubmissionRecord> => {
+    const result: Record<string, SubmissionRecord> = {};
+    for (const [key, value] of Object.entries(entries)) {
+      const validated = validateSubmissionRecord(value);
+      if (!validated.ok) {
+        ctx.addIssue({ code: "custom", path: [key], message: validated.error });
+        return z.NEVER;
+      }
+      if (validated.record.key !== key) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: "the submission key does not match its record",
+        });
+        return z.NEVER;
+      }
+      result[key] = validated.record;
+    }
+    return result;
+  },
+);
+
 const envelopeSchema = z.object({
   format: z.literal(DOCUMENT_FORMAT),
   // Version is checked separately so a newer file gets a clear message.
@@ -44,6 +74,7 @@ const envelopeSchema = z.object({
     catalogVersion: z.number().int().nonnegative(),
   }),
   treasury: treasurySchema,
+  submissions: submissionsSchema,
   workbook: workbookSchema,
 });
 

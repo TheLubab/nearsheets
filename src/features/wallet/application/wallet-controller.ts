@@ -2,6 +2,7 @@ import type { NearNetwork } from "../../../integrations/near/network";
 import type {
   WalletConnection,
   WalletGateway,
+  WalletTransaction,
 } from "../../../integrations/wallet/gateway";
 import { WalletCancelledError } from "../../../integrations/wallet/gateway";
 
@@ -50,6 +51,14 @@ export interface WalletController {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   setNetwork(network: NearNetwork): Promise<void>;
+  /**
+   * Signs and sends one transaction through the connected session.
+   *
+   * Deliberately not a state machine: a declined signature must not look like a
+   * lost connection. Rejections propagate unchanged so the caller can tell a
+   * cancellation (nothing sent) from a real failure.
+   */
+  signAndSendTransaction(transaction: WalletTransaction): Promise<unknown>;
   /** Clears the recoverable cancellation notice. */
   dismissCancelled(): void;
   dispose(): void;
@@ -188,6 +197,12 @@ export function createWalletController(
     connect,
     disconnect,
     setNetwork,
+    signAndSendTransaction: async (transaction) => {
+      if (disposed || state.status !== "connected" || !state.connection) {
+        throw new Error("Connect a wallet before submitting a proposal.");
+      }
+      return gateway.signAndSendTransaction(transaction);
+    },
     dismissCancelled: () => {
       if (state.cancelled) {
         publish({ cancelled: false });

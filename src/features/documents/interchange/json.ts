@@ -1,4 +1,5 @@
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
+import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 import type { DocumentEnvelope } from "../model/document-envelope";
 import type { DocumentValidationError } from "../model/document-schema";
 import { migrateDocument } from "../model/document-migrations";
@@ -12,6 +13,38 @@ import { migrateDocument } from "../model/document-migrations";
  * executable custom-function code. Export writes only known metadata and the
  * snapshot, so an unrelated property added in memory cannot leak into a file.
  */
+
+/**
+ * Copies a journal entry field by field.
+ *
+ * Export must not become a generic serializer: writing only known fields means
+ * an extra property attached at runtime cannot travel into a file.
+ */
+function serializeSubmission(record: SubmissionRecord): SubmissionRecord {
+  return {
+    key: record.key,
+    treasury: {
+      network: record.treasury.network,
+      accountId: record.treasury.accountId,
+    },
+    draftId: record.draftId,
+    reference: record.reference,
+    recipient: record.recipient,
+    amountBaseUnits: record.amountBaseUnits,
+    status: record.status,
+    proposalId: record.proposalId,
+    lastProposalIdBefore: record.lastProposalIdBefore,
+    submittedBy: record.submittedBy,
+    attempts: record.attempts.map((attempt) => ({
+      at: attempt.at,
+      transactionHash: attempt.transactionHash,
+      outcome: attempt.outcome,
+      message: attempt.message,
+    })),
+    updatedAt: record.updatedAt,
+    note: record.note,
+  };
+}
 
 /** Stable serialization order keeps exported files diff-friendly. */
 export function serializeDocument(document: DocumentEnvelope): string {
@@ -28,6 +61,12 @@ export function serializeDocument(document: DocumentEnvelope): string {
       network: document.treasury.network,
       accountId: document.treasury.accountId,
     },
+    submissions: Object.fromEntries(
+      Object.entries(document.submissions).map(([key, record]) => [
+        key,
+        serializeSubmission(record),
+      ]),
+    ),
     workbook: document.workbook,
   };
   return `${JSON.stringify(payload, null, 2)}\n`;

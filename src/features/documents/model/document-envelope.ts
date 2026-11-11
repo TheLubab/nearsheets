@@ -1,4 +1,5 @@
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
+import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 
 /**
  * Format marker stored in every exported document. It lets the importer reject
@@ -13,7 +14,7 @@ export const DOCUMENT_FORMAT = "trezu-sheets";
  * Bump this whenever the envelope shape changes and register a migration in
  * `migrations.ts`. Never change the meaning of an existing field in place.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Version of the custom-function catalog the workbook was calculated with.
@@ -64,6 +65,14 @@ export interface DocumentEnvelope {
   engine: DocumentEngineMetadata;
   customFunctions: DocumentFunctionMetadata;
   treasury: TreasuryMetadata;
+  /**
+   * Local proposal-submission journal, keyed by treasury + draft id.
+   *
+   * Stored with the document because it is what makes a retry safe: losing it
+   * on reload would let a user submit the same payment twice. It is metadata
+   * about actions taken, not workbook content.
+   */
+  submissions: Record<string, SubmissionRecord>;
   workbook: WorkbookSnapshot;
 }
 
@@ -91,6 +100,7 @@ export function createDocumentEnvelope(
     engine: { univer: UNIVER_ENGINE_VERSION },
     customFunctions: { catalogVersion: FUNCTION_CATALOG_VERSION },
     treasury: { ...options.treasury },
+    submissions: {},
     workbook: options.workbook,
   };
 }
@@ -143,6 +153,25 @@ export function withTreasury(
   return {
     ...document,
     treasury: { ...treasury },
+    updatedAt: now.toISOString(),
+  };
+}
+
+/**
+ * Records a submission-journal entry.
+ *
+ * Returns a new envelope and never mutates the previous one. The journal is
+ * metadata about actions already taken, so this does not touch the workbook
+ * snapshot or its timestamp semantics.
+ */
+export function withSubmission(
+  document: DocumentEnvelope,
+  record: SubmissionRecord,
+  now: Date = new Date(),
+): DocumentEnvelope {
+  return {
+    ...document,
+    submissions: { ...document.submissions, [record.key]: record },
     updatedAt: now.toISOString(),
   };
 }

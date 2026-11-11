@@ -218,6 +218,152 @@ body {
   padding: 1px 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Proposal actions                                                    */
+/* ------------------------------------------------------------------ */
+
+.draft-review__row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.draft-review__row-actions button,
+.proposal-confirm__actions button,
+.treasury-panel__votes button {
+  padding: 3px 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-background);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.draft-review__row-actions button:hover:not(:disabled),
+.proposal-confirm__actions button:hover:not(:disabled),
+.treasury-panel__votes button:hover:not(:disabled) {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+}
+
+.draft-review__row-actions button:disabled,
+.proposal-confirm__actions button:disabled,
+.treasury-panel__votes button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.draft-review__notice {
+  margin: 6px 0 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #e7f1fb;
+  color: #14508a;
+}
+
+.draft-review__dismiss {
+  margin-left: 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.draft-review__record {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--app-background);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.draft-review__record--submitted {
+  background: #e6f4ea;
+  color: #1e6b33;
+}
+
+.draft-review__record--unknown,
+.draft-review__record--failed {
+  background: #fdeaea;
+  color: #8a1c27;
+}
+
+.proposal-confirm {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-accent);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.proposal-confirm h3 {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+}
+
+.proposal-confirm dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0 0 8px;
+}
+
+.proposal-confirm dt {
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.proposal-confirm dd {
+  margin: 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.proposal-confirm__warning {
+  margin: 4px 0 0;
+  color: #8a5300;
+  font-size: 0.78rem;
+}
+
+.proposal-confirm__blocker {
+  margin: 4px 0 0;
+  color: #8a1c27;
+  font-size: 0.78rem;
+}
+
+.proposal-confirm__hint {
+  margin: 8px 0 0;
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.proposal-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.treasury-panel__votes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.treasury-panel__vote-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+
 .document-bar {
   position: relative;
   display: flex;

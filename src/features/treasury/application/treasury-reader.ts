@@ -39,6 +39,8 @@ export interface TreasuryReadSource {
   readProposals(target: TreasuryTarget, page: ProposalPage): Promise<unknown>;
   readLastProposalId(target: TreasuryTarget): Promise<unknown>;
   readBalances(target: TreasuryTarget): Promise<unknown>;
+  /** One proposal by id; `null` when the contract has no such proposal. */
+  readProposal(target: TreasuryTarget, id: number): Promise<unknown>;
 }
 
 export interface TreasurySnapshot {
@@ -56,6 +58,18 @@ export interface TreasuryReader {
     limit?: number,
   ): Promise<{ proposals: TreasuryProposal[]; lastProposalId: number }>;
   readBalances(target: TreasuryTarget): Promise<TreasuryBalance[]>;
+  /**
+   * The contract's next proposal id.
+   *
+   * Read immediately before signing so reconciliation has a trustworthy lower
+   * bound; it is never cached, because a stale value would hide a proposal.
+   */
+  readLastProposalId(target: TreasuryTarget): Promise<number>;
+  /** Reads one proposal plus the current count, for post-submission refresh. */
+  readProposal(
+    target: TreasuryTarget,
+    id: number,
+  ): Promise<{ proposal: TreasuryProposal | null; lastProposalId: number }>;
 }
 
 /** Default number of proposals shown; enough for review without a bulk fetch. */
@@ -152,6 +166,35 @@ export function createTreasuryReader(source: TreasuryReadSource): TreasuryReader
     readPolicy,
     readProposals,
     readBalances,
+    readLastProposalId: async (target: TreasuryTarget): Promise<number> => {
+      const raw = await guarded(target, "Reading the proposal count", () =>
+        source.readLastProposalId(target),
+      );
+      return parseLastProposalId(raw, target);
+    },
+    readProposal: async (
+      target: TreasuryTarget,
+      id: number,
+    ): Promise<{ proposal: TreasuryProposal | null; lastProposalId: number }> => {
+      if (!Number.isSafeInteger(id) || id < 0) {
+        throw new TreasuryReadError(target, `Proposal id ${id} is not a valid id.`);
+      }
+      const rawLastId = await guarded(target, "Reading the proposal count", () =>
+        source.readLastProposalId(target),
+      );
+      const lastProposalId = parseLastProposalId(rawLastId, target);
+      const raw = await guarded(target, `Reading proposal #${id}`, () =>
+        source.readProposal(target, id),
+      );
+      if (raw === null || raw === undefined) {
+        return { proposal: null, lastProposalId };
+      }
+      const parsed = parseTreasuryProposals([raw]);
+      if (!parsed.ok) {
+        throw new TreasuryReadError(target, parsed.error);
+      }
+      return { proposal: parsed.value[0] ?? null, lastProposalId };
+    },
   };
 }
 

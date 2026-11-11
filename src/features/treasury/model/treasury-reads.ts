@@ -383,6 +383,14 @@ export interface TreasuryProposal {
   /** Sputnik policy label, e.g. `transfer`. */
   kind: string;
   transfer: TreasuryProposalTransfer | null;
+  /**
+   * The contract's proposal kind exactly as returned.
+   *
+   * `act_proposal` asserts the kind argument equals the stored kind
+   * (`ERR_WRONG_KIND`), so a vote has to echo this value rather than rebuild it
+   * from the display label. It is kept as untrusted JSON on purpose.
+   */
+  kindJson: unknown;
 }
 
 const MAX_DATE_MS = 8_640_000_000_000_000n;
@@ -414,7 +422,7 @@ const proposalKindSchema = z.union([
   z
     .string()
     .min(1)
-    .transform((label) => ({ label: label.toLowerCase(), transfer: null })),
+    .transform((label) => ({ label: label.toLowerCase(), transfer: null, raw: label })),
   z.record(z.string(), z.unknown()).transform((value, ctx) => {
     const key = Object.keys(value)[0];
     if (!key) {
@@ -432,6 +440,16 @@ const proposalKindSchema = z.union([
       }
       return {
         label: "transfer",
+        // Echoing the parsed shape (not the raw object) keeps `msg` as the
+        // contract's `Option<String>` expects, even if the response omitted it.
+        raw: {
+          Transfer: {
+            token_id: parsed.data.Transfer.token_id,
+            receiver_id: parsed.data.Transfer.receiver_id,
+            amount: parsed.data.Transfer.amount,
+            msg: parsed.data.Transfer.msg ?? null,
+          },
+        },
         transfer: {
           tokenId: parsed.data.Transfer.token_id.length > 0 ? parsed.data.Transfer.token_id : null,
           receiverId: parsed.data.Transfer.receiver_id,
@@ -442,6 +460,7 @@ const proposalKindSchema = z.union([
     return {
       label: PROPOSAL_KIND_LABELS[key] ?? key.toLowerCase(),
       transfer: null,
+      raw: value,
     };
   }),
 ]);
@@ -466,6 +485,7 @@ const proposalSchema = z
       ).toISOString(),
       kind: raw.kind.label,
       transfer: raw.kind.transfer,
+      kindJson: raw.kind.raw,
     }),
   );
 

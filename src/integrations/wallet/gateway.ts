@@ -29,11 +29,39 @@ export interface WalletConnection {
   walletName: string;
 }
 
+/**
+ * One contract call the wallet should sign.
+ *
+ * Kept as data so callers can be tested without a wallet, and so the only
+ * signing path in the application is this explicit method.
+ */
+export interface WalletTransaction {
+  receiverId: string;
+  actions: Array<{
+    type: "FunctionCall";
+    params: {
+      methodName: string;
+      args: Record<string, unknown>;
+      gas: string;
+      deposit: string;
+    };
+  }>;
+}
+
 export interface WalletGateway {
   readonly network: NearNetwork;
   /** Resolves with the signed-in account; rejects with `WalletCancelledError` when the user closes the selector. */
   connect(): Promise<WalletConnection>;
   disconnect(): Promise<void>;
+  /**
+   * Asks the wallet to sign and send one transaction.
+   *
+   * Resolves with the wallet's raw `FinalExecutionOutcome`, which the caller
+   * must interpret; rejects with `WalletCancelledError` when the user declines,
+   * which means nothing reached the chain. This is the only signing path in the
+   * app and is called exclusively from an explicit user action.
+   */
+  signAndSendTransaction(transaction: WalletTransaction): Promise<unknown>;
   /** Emits when the wallet ends the session on its own. Returns an unsubscribe function. */
   onSignOut(listener: () => void): () => void;
   /** Releases listeners. Does not sign out, so a network switch can disconnect explicitly first. */
@@ -127,6 +155,27 @@ export function createConnectorWalletGateway(
       }
       await active.disconnect(wallet ?? undefined);
       wallet = null;
+    },
+
+    async signAndSendTransaction(transaction: WalletTransaction): Promise<unknown> {
+      if (disposed) {
+        throw new Error("The wallet connection has been closed.");
+      }
+      const active = wallet;
+      if (!active) {
+        // Never reconnect implicitly: a transaction must be authorized by the
+        // session the user can see in the wallet panel.
+        throw new Error("Connect a wallet before signing.");
+      }
+      try {
+        return await active.signAndSendTransaction({
+          receiverId: transaction.receiverId,
+          actions: transaction.actions,
+          network: options.network,
+        });
+      } catch (cause) {
+        throw asWalletError(cause);
+      }
     },
 
     onSignOut(listener) {

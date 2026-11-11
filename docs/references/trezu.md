@@ -14,6 +14,8 @@ This is a local reference bundle, not application code. Upstream setup commands 
 
 ## Contents
 
+- Authentication implementation supplement (search this heading): wallet store, selector, challenge/login/session verification.
+
 - [README.md](https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/README.md)
 - [nt-fe/README.md](https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/README.md)
 - [nt-be/README.md](https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-be/README.md)
@@ -3526,12 +3528,12 @@ sequenceDiagram
     Admin->>UI: Import payment list (500+ recipients)
     UI->>UI: Calculate SHA-256 hash of payment list
     UI-->>Admin: Display hash & estimated costs
-    
+
     Note over Admin,Recipients: Phase 2: DAO Proposal Creation (Authorization)
     Admin->>UI: Create proposal
     UI->>SputnikDAO: Create bulk-payment proposal<br/>(with list hash as reference)
     SputnikDAO-->>UI: Proposal created (proposal ID)
-    
+
     Note over Admin,Recipients: Phase 3: Submit List to Backend (Hash Validated)
     UI->>Backend: Submit payment list + hash + DAO info
     Backend->>SputnikDAO: Verify pending proposal exists with this hash
@@ -3541,7 +3543,7 @@ sequenceDiagram
     BulkContract->>BulkContract: Store list with "pending" status
     BulkContract-->>Backend: Confirmed
     Backend-->>UI: List registered successfully
-    
+
     Note over Admin,Recipients: Phase 4: Review & Approval
     UI->>Backend: Fetch payment list for review
     Backend->>BulkContract: Get list by hash
@@ -3550,14 +3552,14 @@ sequenceDiagram
     UI->>Approvers: Display proposal with payment list
     Approvers->>Approvers: Optionally verify hash matches list
     Approvers->>SputnikDAO: Vote on proposal
-    
+
     Note over Admin,Recipients: Phase 5: Execution
     SputnikDAO->>SputnikDAO: Proposal approved
     SputnikDAO->>BulkContract: ft_transfer_call (total + fees, hash in msg)
     BulkContract->>BulkContract: Verify hash matches stored list
     BulkContract->>BulkContract: Mark list as "approved/ready"
     BulkContract-->>SputnikDAO: Acknowledge receipt
-    
+
     Note over Admin,Recipients: Phase 6: Batch Processing
     loop Until all payments complete
         Backend->>BulkContract: Ping/payout_batch (process next batch)
@@ -3568,7 +3570,7 @@ sequenceDiagram
         Backend-->>UI: Payment progress status
         UI-->>Admin: Display progress
     end
-    
+
     Note over Admin,Recipients: Alternative: Rejection Flow
     alt Proposal Rejected
         Approvers->>SputnikDAO: Reject proposal
@@ -3655,5 +3657,4057 @@ pub struct PaymentRecord {
    - Easy verification: anyone can hash the list and confirm it matches the proposal
 
 5. **Simplified verification**: Approvers can independently verify the list contents match the proposal by recalculating the hash.
+
+`````
+
+## Authentication implementation supplement
+
+Retrieved: 2026-11-11T16:11:10.122Z. Revision: 62cf0e41d4b2d2358a496d47c80fcd2e59094247.
+
+The captured implementation uses NEAR Connect, a server-issued challenge, wallet.resolveAuth (NEP-641 PROVE_OWNERSHIP), backend verification with NEP-413 fallback, and an HttpOnly Secure SameSite=Strict cookie session. Read the source below rather than relying only on the older README's NEP-413 description. This is an upstream snapshot, not proof of deployed API compatibility. Trezu's recipient identity, domain, terms and session cannot be copied as NearSheets identity.
+
+### nt-fe/components/auth-provider.tsx
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/components/auth-provider.tsx
+
+`````typescript
+"use client";
+
+import { useEffect, useState } from "react";
+import { useNearStore } from "@/stores/near-store";
+import { AcceptTermsModal } from "./accept-terms-modal";
+import { LoadingScreen } from "./loading-screen";
+import { useConnectorPopupVisible } from "./modal";
+
+interface AuthProviderProps {
+    children: React.ReactNode;
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+    const {
+        isInitializing,
+        isAuthenticated,
+        hasAcceptedTerms,
+        checkAuth,
+        user,
+    } = useNearStore();
+
+    const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
+    const connectorPopupVisible = useConnectorPopupVisible();
+
+    useEffect(() => {
+        const check = async () => {
+            await checkAuth();
+            setHasCheckedAuth(true);
+        };
+        check();
+    }, [checkAuth]);
+
+    if (!hasCheckedAuth || isInitializing) {
+        return <LoadingScreen />;
+    }
+
+    const showTermsModal =
+        isAuthenticated && !hasAcceptedTerms && !connectorPopupVisible;
+
+    return (
+        <>
+            {children}
+            <AcceptTermsModal
+                open={showTermsModal}
+                variant={user?.hasAcceptedV1Terms ? "returning" : "firstTime"}
+            />
+        </>
+    );
+}
+
+`````
+
+### nt-fe/components/auth-button.tsx
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/components/auth-button.tsx
+
+`````typescript
+import { useTranslations } from "next-intl";
+import { useMemo } from "react";
+import { useSubscription } from "@/hooks/use-subscription";
+import { useTreasury } from "@/hooks/use-treasury";
+import { useTreasuryPolicy } from "@/hooks/use-treasury-queries";
+import { useSlotBlock } from "@/hooks/use-warnings";
+import {
+    getApproversAndThreshold,
+    hasPermission,
+    isAnyMember,
+} from "@/lib/config-utils";
+import type { ProposalKind } from "@/lib/proposals-api";
+import { cn } from "@/lib/utils";
+import { stripMessageForTooltip } from "@/lib/warnings";
+import { useNear } from "@/stores/near-store";
+import { Button } from "./button";
+import { Tooltip } from "./tooltip";
+
+interface AuthButtonProps extends React.ComponentProps<typeof Button> {
+    permissionKind: string;
+    permissionAction: string;
+    balanceCheck?: {
+        withProposalBond?: boolean;
+    };
+    tooltip?: string; // Tooltip content
+    tooltipProps?: Omit<
+        React.ComponentProps<typeof Tooltip>,
+        "children" | "content"
+    >; // Additional tooltip props (disabled, contentProps, etc.)
+}
+
+export function useNoVoteMessage() {
+    const t = useTranslations("auth");
+    return t("noVote");
+}
+
+interface ErrorMessageProps extends React.ComponentProps<typeof Button> {
+    message: string;
+}
+
+function ErrorMessage({
+    message,
+    className,
+    children,
+    ...props
+}: ErrorMessageProps) {
+    const isIconSize =
+        props.size === "icon" ||
+        props.size === "icon-sm" ||
+        props.size === "icon-lg";
+    return (
+        <Button
+            {...props}
+            disabled
+            tooltipContent={message}
+            aria-disabled
+            className={cn(
+                isIconSize
+                    ? "shrink-0 opacity-50 cursor-not-allowed"
+                    : "w-full shrink opacity-50 cursor-not-allowed",
+                className,
+            )}
+        >
+            {children}
+        </Button>
+    );
+}
+
+export function AuthButton({
+    permissionKind,
+    permissionAction,
+    children,
+    disabled,
+    balanceCheck,
+    onClick,
+    tooltip,
+    tooltipContent,
+    tooltipProps,
+    ...props
+}: AuthButtonProps) {
+    const t = useTranslations("auth");
+    const { accountId } = useNear();
+    const { treasuryId } = useTreasury();
+    const { data: policy } = useTreasuryPolicy(treasuryId);
+    const { data: subscription } = useSubscription(treasuryId);
+    const isCreateProposalAction = permissionAction === "AddProposal";
+    const {
+        blocked: createProposalBlocked,
+        message: createProposalBlockedMessage,
+    } = useSlotBlock("action.create-proposal");
+    const proposalBlocked = isCreateProposalAction && createProposalBlocked;
+    const hasAccess = useMemo(() => {
+        if (!accountId) return false;
+        if (permissionKind === "any") return isAnyMember(policy, accountId);
+        return hasPermission(
+            policy,
+            accountId,
+            permissionKind,
+            permissionAction,
+        );
+    }, [policy, accountId, permissionKind, permissionAction]);
+    const hasSponsoredTransactions = useMemo(() => {
+        if (!subscription) return true;
+
+        const totalSponsored =
+            subscription.planConfig.limits.gasCoveredTransactions;
+        if (totalSponsored === null) return true;
+
+        return subscription.gasCoveredTransactions > 0;
+    }, [subscription]);
+
+    if (!accountId) {
+        return (
+            <ErrorMessage message={t("noWallet")} {...props}>
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    if (!hasAccess) {
+        return (
+            <ErrorMessage message={t("noPermission")} {...props}>
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    if (!hasSponsoredTransactions) {
+        return (
+            <ErrorMessage message={t("noSponsoredTransactions")} {...props}>
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    if (proposalBlocked) {
+        return (
+            <ErrorMessage
+                message={
+                    stripMessageForTooltip(createProposalBlockedMessage) ||
+                    t("noPermission")
+                }
+                {...props}
+            >
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    return (
+        <>
+            {tooltip || tooltipContent ? (
+                <Button
+                    {...props}
+                    disabled={disabled}
+                    onClick={onClick}
+                    tooltipContent={tooltip || tooltipContent}
+                >
+                    {children}
+                </Button>
+            ) : (
+                <Button {...props} disabled={disabled} onClick={onClick}>
+                    {children}
+                </Button>
+            )}
+        </>
+    );
+}
+
+interface AuthButtonWithProposalProps
+    extends React.ComponentProps<typeof Button> {
+    proposalKind: ProposalKind;
+    isDeleteCheck?: boolean;
+    tooltip?: string; // Tooltip content
+    tooltipProps?: Omit<
+        React.ComponentProps<typeof Tooltip>,
+        "children" | "content"
+    >;
+}
+
+export function AuthButtonWithProposal({
+    proposalKind,
+    isDeleteCheck = false,
+    children,
+    disabled,
+    onClick,
+    tooltip,
+    tooltipProps,
+    ...props
+}: AuthButtonWithProposalProps) {
+    const t = useTranslations("auth");
+    const { accountId } = useNear();
+    const { treasuryId } = useTreasury();
+    const { data: policy } = useTreasuryPolicy(treasuryId);
+    const { data: subscription } = useSubscription(treasuryId);
+
+    const hasAccess = useMemo(() => {
+        if (!policy || !accountId) return false;
+        const { approverAccounts } = getApproversAndThreshold(
+            policy,
+            accountId,
+            proposalKind,
+            isDeleteCheck,
+        );
+        return approverAccounts.includes(accountId);
+    }, [policy, accountId, proposalKind, isDeleteCheck]);
+    const hasSponsoredTransactions = useMemo(() => {
+        if (!subscription) return true;
+
+        const totalSponsored =
+            subscription.planConfig.limits.gasCoveredTransactions;
+        if (totalSponsored === null) return true;
+
+        return subscription.gasCoveredTransactions > 0;
+    }, [subscription]);
+
+    if (!accountId) {
+        return (
+            <ErrorMessage message={t("noWallet")} {...props}>
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    if (!hasAccess) {
+        return (
+            <ErrorMessage message={t("noPermission")} {...props}>
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    if (!hasSponsoredTransactions) {
+        return (
+            <ErrorMessage message={t("noSponsoredTransactions")} {...props}>
+                {children}
+            </ErrorMessage>
+        );
+    }
+
+    return (
+        <>
+            {tooltip ? (
+                <Tooltip content={tooltip} {...tooltipProps}>
+                    <span className="w-full">
+                        <Button
+                            {...props}
+                            className="w-full"
+                            disabled={disabled}
+                            onClick={onClick}
+                        >
+                            {children}
+                        </Button>
+                    </span>
+                </Tooltip>
+            ) : (
+                <span className="w-full">
+                    <Button {...props} disabled={disabled} onClick={onClick}>
+                        {children}
+                    </Button>
+                </span>
+            )}
+        </>
+    );
+}
+
+`````
+
+### nt-fe/components/sign-in.tsx
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/components/sign-in.tsx
+
+`````typescript
+"use client";
+
+import {
+    ChevronDown,
+    FileText,
+    Loader2,
+    LogIn,
+    LogOut,
+    UserRound,
+} from "lucide-react";
+import Link from "next/link";
+import {
+    useParams,
+    usePathname,
+    useRouter,
+    useSearchParams,
+} from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useState } from "react";
+import { Button } from "@/components/button";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from "@/constants/config";
+import { useNear } from "@/stores/near-store";
+import { CopyButton } from "./copy-button";
+import { User } from "./user";
+
+export function SignIn() {
+    const t = useTranslations("signIn");
+    const tCommon = useTranslations("common");
+    const tAddress = useTranslations("address");
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const params = useParams();
+    const treasuryId = params?.treasuryId as string | undefined;
+    const {
+        accountId: signedAccountId,
+        isInitializing,
+        isAuthenticated,
+        disconnect,
+    } = useNear();
+    const [isOpen, setIsOpen] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
+    const connectWalletLabel = `${t("connect")} ${t("wallet")}`;
+    const accountHref = treasuryId ? `/${treasuryId}/account` : null;
+
+    const handleConnect = async () => {
+        setIsConnecting(true);
+        try {
+            const params = new URLSearchParams();
+            const currentQuery = searchParams.toString();
+            const returnTo = currentQuery
+                ? `${pathname}?${currentQuery}`
+                : pathname;
+            params.set("returnTo", returnTo);
+            router.push(`/login?${params.toString()}`);
+        } finally {
+            setIsConnecting(false);
+        }
+    };
+
+    if (isInitializing) {
+        return (
+            <>
+                <Button
+                    disabled
+                    size="icon"
+                    className="md:hidden"
+                    aria-label={tCommon("loading")}
+                >
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                </Button>
+                <Button disabled className="hidden md:flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {tCommon("loading")}
+                </Button>
+            </>
+        );
+    }
+
+    // Show connect button if not connected or not authenticated
+    if (!signedAccountId || !isAuthenticated) {
+        return (
+            <>
+                <Button
+                    onClick={handleConnect}
+                    disabled={isConnecting}
+                    size="icon"
+                    className="md:hidden"
+                    aria-label={connectWalletLabel}
+                >
+                    {isConnecting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                        <LogIn className="h-4 w-4" />
+                    )}
+                </Button>
+                <Button
+                    onClick={handleConnect}
+                    disabled={isConnecting}
+                    className="hidden md:flex items-center gap-2"
+                >
+                    {isConnecting ? (
+                        <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {tCommon("connecting")}
+                        </>
+                    ) : (
+                        <>
+                            <LogIn className="h-4 w-4" />
+                            {t("connect")}{" "}
+                            <span className="hidden md:inline">
+                                {t("wallet")}
+                            </span>
+                        </>
+                    )}
+                </Button>
+            </>
+        );
+    }
+
+    return (
+        <Popover open={isOpen} onOpenChange={setIsOpen}>
+            <PopoverTrigger asChild>
+                <button className="flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-muted cursor-pointer">
+                    <div className="hidden md:block max-w-[180px] min-w-0">
+                        <User
+                            accountId={signedAccountId}
+                            withLink={false}
+                            size="md"
+                        />
+                    </div>
+                    <div className="flex md:hidden">
+                        <User
+                            accountId={signedAccountId}
+                            withLink={false}
+                            size="sm"
+                            variant="avatar"
+                        />
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground hidden sm:inline" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-1">
+                <div className="flex items-center gap-2 px-2 py-2 min-w-0">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                        <User
+                            accountId={signedAccountId}
+                            withLink={false}
+                            size="md"
+                        />
+                    </div>
+                    <CopyButton
+                        text={signedAccountId}
+                        toastMessage={tAddress("copied")}
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("copyAddress")}
+                        className="size-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-general-unofficial-ghost-hover"
+                        iconClassName="h-4 w-4"
+                    />
+                </div>
+                <div className="border-t border-border dark:border-general-border my-1" />
+                {accountHref && (
+                    <Link
+                        href={accountHref}
+                        className="flex items-center rounded-6 gap-2 px-3 py-2 text-sm transition-colors hover:bg-general-unofficial-ghost-hover"
+                        onClick={() => setIsOpen(false)}
+                    >
+                        <UserRound className="h-4 w-4" />
+                        {t("myAccount")}
+                    </Link>
+                )}
+                <Link
+                    href={TERMS_OF_SERVICE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center rounded-6 gap-2 px-3 py-2 text-sm transition-colors hover:bg-general-unofficial-ghost-hover"
+                    onClick={() => setIsOpen(false)}
+                >
+                    <FileText className="h-4 w-4" />
+                    {t("termsOfService")}
+                </Link>
+                <Link
+                    href={PRIVACY_POLICY_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center rounded-6 gap-2 px-3 py-2 text-sm transition-colors hover:bg-general-unofficial-ghost-hover"
+                    onClick={() => setIsOpen(false)}
+                >
+                    <FileText className="h-4 w-4" />
+                    {t("privacyPolicy")}
+                </Link>
+                <div className="border-t border-border dark:border-general-border my-1">
+                    <button
+                        className="flex items-center rounded-6 gap-2 px-3 py-2 text-sm w-full transition-colors hover:bg-general-unofficial-ghost-hover"
+                        onClick={() => {
+                            disconnect();
+                            setIsOpen(false);
+                        }}
+                    >
+                        <LogOut className="h-4 w-4" />
+                        {t("disconnect")}
+                    </button>
+                </div>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+`````
+
+### nt-fe/components/connect-wallet-selector.tsx
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/components/connect-wallet-selector.tsx
+
+`````typescript
+"use client";
+
+import { Check, CircleAlert, Fingerprint, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Alert, AlertDescription } from "@/components/alert";
+import { SlotWarning } from "@/components/warning-message";
+import { Button } from "@/components/button";
+import { PageCard } from "@/components/card";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/modal";
+import { StepperHeader } from "@/components/step-wizard";
+import { Pill } from "@/components/pill";
+import {
+    useWarningOfflineBadgeLabel,
+    useResolveWarningMessage,
+} from "@/hooks/use-warnings";
+import { useWarnings } from "@/hooks/use-warnings";
+import { trackEvent } from "@/lib/analytics";
+import {
+    LAST_USED_WALLET_STORAGE_KEY,
+    NEAR_WALLET_CHOICES,
+    SELECTED_WALLET_STORAGE_KEY,
+    WALLET_IDS,
+    WALLET_OPTIONS,
+    type WalletOption,
+    getWalletGroup,
+    getWalletLoginSlot,
+    resolveManifestWalletId,
+} from "@/lib/wallets";
+import { cn } from "@/lib/utils";
+import { stripMessageForTooltip } from "@/lib/warnings";
+import { useNear } from "@/stores/near-store";
+
+type WalletPickerType = "near";
+
+function WalletOptionIcon({
+    wallet,
+    size = "lg",
+}: {
+    wallet: WalletOption;
+    size?: "lg" | "xl";
+}) {
+    const sizeClass = size === "xl" ? "size-12" : "size-8";
+    if (wallet.id === WALLET_IDS.PASSKEY) {
+        return (
+            <div className="flex items-center">
+                <div
+                    className={cn(
+                        `${sizeClass} rounded-full bg-foreground text-background flex items-center justify-center`,
+                        wallet.imageClassName,
+                    )}
+                >
+                    <Fingerprint className="size-4" />
+                </div>
+            </div>
+        );
+    }
+
+    const stackedSources = [
+        wallet.tertiaryIconSrc,
+        wallet.secondaryIconSrc,
+        wallet.imgSrc,
+    ].filter(Boolean) as string[];
+
+    return (
+        <div className="flex items-center">
+            {stackedSources.map((src, index) => (
+                <img
+                    key={`${wallet.id}-${src}-${index}`}
+                    src={src}
+                    alt={
+                        index === stackedSources.length - 1 ? wallet.label : ""
+                    }
+                    className={cn(
+                        `${sizeClass} rounded-full bg-black object-cover`,
+                        stackedSources.length > 1 && "border-2 border-card",
+                        index > 0 && "-ml-3",
+                        index === stackedSources.length - 1
+                            ? "relative z-30"
+                            : index === stackedSources.length - 2
+                              ? "relative z-20"
+                              : "relative z-10",
+                        wallet.imageClassName,
+                    )}
+                />
+            ))}
+        </div>
+    );
+}
+
+/**
+ * Surfaces a failed connect attempt on the sign-in screen.
+ *
+ * Without this the wallet's own popup just closes and the user is left staring
+ * at the untouched sign-in screen with no idea what went wrong — the failure
+ * mode looks identical to "nothing happened". The wallet's message is shown
+ * verbatim underneath: it is what explains *why* (passkey cancelled, on-chain
+ * account setup failed, backend rejected the authorization, ...).
+ */
+function ConnectFailureAlert({ error }: { error: string | null }) {
+    const t = useTranslations("createTreasury");
+    if (!error) return null;
+
+    return (
+        <Alert variant="destructive" className="items-start gap-2">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" />
+            <AlertDescription className="flex flex-col gap-1">
+                <span className="font-medium">
+                    {t("walletSelector.connectFailed")}
+                </span>
+                <span className="text-xs break-words opacity-80">{error}</span>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
+interface ConnectWalletSelectorProps {
+    source: string;
+    connectFlow: "onboarding" | "within_treasury";
+    isConnectingWallet?: boolean;
+    onBack?: () => void;
+    showBackButton?: boolean;
+    showOnboardingHints?: boolean;
+    showCreateTreasuryCta?: boolean;
+    onCreateTreasuryClick?: () => void;
+    onConnectSupported: (walletId?: string) => Promise<void> | void;
+    /** Optional context shown above the standard "Choose how to sign in" header. */
+    introTitle?: string;
+    introDescription?: ReactNode;
+}
+
+export function ConnectWalletSelector({
+    source,
+    connectFlow,
+    isConnectingWallet = false,
+    onBack,
+    showBackButton = true,
+    showOnboardingHints = false,
+    showCreateTreasuryCta = true,
+    onCreateTreasuryClick,
+    onConnectSupported,
+    introTitle,
+    introDescription,
+}: ConnectWalletSelectorProps) {
+    const router = useRouter();
+    const t = useTranslations("createTreasury");
+    const { getWarning } = useWarnings();
+    const resolveWarningMessage = useResolveWarningMessage();
+    const offlineBadgeLabel = useWarningOfflineBadgeLabel();
+    const { accountId, authError } = useNear();
+    const [unsupportedWallet, setUnsupportedWallet] =
+        useState<WalletOption | null>(null);
+    const [isGuideOpen, setIsGuideOpen] = useState(false);
+    const [walletPickerOpen, setWalletPickerOpen] =
+        useState<WalletPickerType | null>(null);
+    const [lastUsedWalletId, setLastUsedWalletId] = useState<string | null>(
+        () => {
+            if (typeof window === "undefined") return null;
+            return (
+                window.localStorage.getItem(LAST_USED_WALLET_STORAGE_KEY) ??
+                window.localStorage.getItem(SELECTED_WALLET_STORAGE_KEY)
+            );
+        },
+    );
+    const [pendingRecentWalletId, setPendingRecentWalletId] = useState<
+        string | null
+    >(null);
+
+    const closeUnsupportedWalletModal = () => {
+        setUnsupportedWallet(null);
+    };
+
+    const headerTitle = t("walletSelector.title");
+    const headerDescription = showOnboardingHints ? (
+        <>
+            {t("walletSelector.subtitle")}{" "}
+            <button
+                type="button"
+                className="text-muted-foreground underline underline-offset-2 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm transition-colors cursor-pointer"
+                onClick={() => setIsGuideOpen(true)}
+            >
+                {t("walletSelector.helpCta")}
+            </button>
+        </>
+    ) : undefined;
+
+    const recentWalletGroup = useMemo(
+        () => getWalletGroup(lastUsedWalletId),
+        [lastUsedWalletId],
+    );
+
+    const markWalletAsRecent = (walletId: string) => {
+        if (typeof window === "undefined") return;
+        window.localStorage.setItem(LAST_USED_WALLET_STORAGE_KEY, walletId);
+        setLastUsedWalletId(walletId);
+    };
+
+    // Persist "recent" only after login succeeds.
+    useEffect(() => {
+        if (!pendingRecentWalletId || !accountId) return;
+        markWalletAsRecent(pendingRecentWalletId);
+        setPendingRecentWalletId(null);
+    }, [pendingRecentWalletId, accountId]);
+
+    // Clear pending recent marker if login/auth fails.
+    useEffect(() => {
+        if (!pendingRecentWalletId || !authError) return;
+        setPendingRecentWalletId(null);
+    }, [pendingRecentWalletId, authError]);
+
+    const isLoginPaused = getWarning("login")?.response === "paused";
+
+    const isWalletChoiceBlocked = (walletId: WalletOption["id"]) => {
+        if (isLoginPaused) return true;
+        // The NEAR group is a container — it opens a modal whose inner choices
+        // carry their own offline state, so the container itself isn't blocked.
+        if (walletId === WALLET_IDS.NEAR) return false;
+        const walletWarning = getWarning(getWalletLoginSlot(walletId));
+        return walletWarning?.response === "paused";
+    };
+
+    // Per-wallet warning from the admin system. When present, the wallet
+    // card shows an "Offline" badge (with the admin message as tooltip)
+    // instead of "Recent".
+    // Login wallet warnings are always paused (offline). Only surface those so
+    // the "Offline" badge and the disabled state stay in lockstep.
+    const getWalletWarning = (walletId: WalletOption["id"]) => {
+        const warning = getWarning(getWalletLoginSlot(walletId));
+        return warning?.response === "paused" ? warning : null;
+    };
+
+    type BadgeInfo = { label: string; tooltip?: string; isOffline?: boolean };
+
+    // Show "Offline" badge only for per-wallet warnings, not when all
+    // login is paused (the banner already covers that case).
+    const getTopLevelBadge = (wallet: WalletOption): BadgeInfo | null => {
+        // The NEAR group card opens a modal, so its inner choices show their own
+        // "Offline" badges — don't tag the container itself.
+        if (!isLoginPaused && wallet.id !== WALLET_IDS.NEAR) {
+            const walletWarning = getWalletWarning(wallet.id);
+            if (walletWarning) {
+                const slot = getWalletLoginSlot(wallet.id);
+                return {
+                    label: offlineBadgeLabel,
+                    tooltip:
+                        stripMessageForTooltip(
+                            resolveWarningMessage(walletWarning, slot),
+                        ) || undefined,
+                    isOffline: true,
+                };
+            }
+        }
+        const hasRecent = !!lastUsedWalletId || !!recentWalletGroup;
+        if (wallet.id === lastUsedWalletId || wallet.id === recentWalletGroup) {
+            return { label: t("walletSelector.recentBadge") };
+        }
+        if (hasRecent) return null;
+        return wallet.isPopular
+            ? { label: t("walletSelector.popularBadge") }
+            : null;
+    };
+
+    const getModalBadge = (wallet: WalletOption): BadgeInfo | null => {
+        if (!isLoginPaused) {
+            const walletWarning = getWalletWarning(wallet.id);
+            if (walletWarning) {
+                const slot = getWalletLoginSlot(wallet.id);
+                return {
+                    label: offlineBadgeLabel,
+                    tooltip:
+                        stripMessageForTooltip(
+                            resolveWarningMessage(walletWarning, slot),
+                        ) || undefined,
+                    isOffline: true,
+                };
+            }
+        }
+        if (wallet.id === lastUsedWalletId) {
+            return { label: t("walletSelector.recentBadge") };
+        }
+        if (
+            wallet.recentGroupAlias &&
+            wallet.recentGroupAlias === recentWalletGroup
+        ) {
+            return { label: t("walletSelector.recentBadge") };
+        }
+        if (wallet.id === recentWalletGroup) {
+            return { label: t("walletSelector.recentBadge") };
+        }
+        return wallet.isPopular
+            ? { label: t("walletSelector.popularBadge") }
+            : null;
+    };
+
+    const handleWalletChoice = (wallet: WalletOption) => {
+        if (isWalletChoiceBlocked(wallet.id)) {
+            return;
+        }
+
+        if (wallet.id === WALLET_IDS.NEAR) {
+            setUnsupportedWallet(null);
+            setIsGuideOpen(false);
+            setWalletPickerOpen("near");
+            return;
+        }
+        trackEvent("onboarding_wallet_option_clicked", {
+            wallet_id: wallet.id,
+            is_supported: wallet.supported,
+            source,
+            connect_flow: connectFlow,
+        });
+
+        if (wallet.supported) {
+            setUnsupportedWallet(null);
+            setIsGuideOpen(false);
+            setWalletPickerOpen(null);
+            setPendingRecentWalletId(wallet.id);
+            const connectWalletId = resolveManifestWalletId(wallet.id);
+            const maybeConnect = onConnectSupported(connectWalletId);
+            Promise.resolve(maybeConnect).catch(() => {
+                setPendingRecentWalletId(null);
+            });
+            return;
+        }
+
+        setUnsupportedWallet(wallet);
+    };
+
+    const walletPickerChoices = NEAR_WALLET_CHOICES;
+
+    // Passkey is the recommended entry: rendered as a full-width hero card at
+    // the top, the rest fill the two-column grid below it.
+    const passkeyOption = WALLET_OPTIONS.find(
+        (wallet) => wallet.id === WALLET_IDS.PASSKEY,
+    );
+    const otherOptions = WALLET_OPTIONS.filter(
+        (wallet) => wallet.id !== WALLET_IDS.PASSKEY,
+    );
+
+    return (
+        <>
+            <PageCard>
+                {(introTitle || introDescription) && (
+                    <div className="mb-1">
+                        <StepperHeader
+                            title={introTitle ?? ""}
+                            description={introDescription}
+                        />
+                    </div>
+                )}
+                <StepperHeader
+                    title={headerTitle}
+                    description={headerDescription}
+                    handleBack={showBackButton ? onBack : undefined}
+                />
+                <SlotWarning slot="login" className="mb-4" />
+                <ConnectFailureAlert error={authError} />
+                {showOnboardingHints && (
+                    <div className="space-y-3 mb-4">
+                        <div className="flex items-start gap-2">
+                            <div className="bg-general-success-background-faded rounded-full size-7 sm:size-6 flex items-center justify-center p-1 sm:p-0">
+                                <Check className="size-4 shrink-0 text-general-success-foreground " />
+                            </div>
+                            <p className="text-sm mt-px">
+                                {t("walletSelector.noFundsNote")}
+                            </p>
+                        </div>
+                    </div>
+                )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {passkeyOption &&
+                        (() => {
+                            const wallet = passkeyOption;
+                            const isOfflineBlocked = isWalletChoiceBlocked(
+                                wallet.id,
+                            );
+                            // Show the Offline warning when blocked, otherwise
+                            // the "recommended" badge.
+                            const topBadge = getTopLevelBadge(wallet);
+                            const badge = topBadge?.isOffline
+                                ? topBadge
+                                : {
+                                      label: t(
+                                          "walletSelector.passkeyCardBadge",
+                                      ),
+                                  };
+                            return (
+                                <Button
+                                    key={wallet.id}
+                                    type="button"
+                                    variant="secondary"
+                                    className={cn(
+                                        "h-auto items-start justify-start rounded-xl border border-border p-4 text-left hover:bg-muted sm:col-span-2",
+                                        isOfflineBlocked &&
+                                            !isConnectingWallet &&
+                                            "cursor-not-allowed opacity-50 hover:bg-secondary",
+                                    )}
+                                    onClick={() => handleWalletChoice(wallet)}
+                                    disabled={isConnectingWallet}
+                                    aria-disabled={
+                                        isConnectingWallet || isOfflineBlocked
+                                    }
+                                >
+                                    <div className="flex w-full flex-col gap-2">
+                                        <div className="flex items-center justify-between">
+                                            <WalletOptionIcon wallet={wallet} />
+                                            <Pill
+                                                title={badge.label}
+                                                info={
+                                                    "tooltip" in badge
+                                                        ? badge.tooltip
+                                                        : undefined
+                                                }
+                                                className={
+                                                    "isOffline" in badge &&
+                                                    badge.isOffline
+                                                        ? "shrink-0 bg-general-warning-background-faded text-general-warning-foreground"
+                                                        : "shrink-0 bg-general-success-background-faded text-general-success-foreground"
+                                                }
+                                            />
+                                        </div>
+                                        <div className="text-lg font-semibold">
+                                            {t(
+                                                "walletSelector.passkeyCardTitle",
+                                            )}
+                                        </div>
+                                        <span className="text-sm font-normal text-muted-foreground whitespace-normal">
+                                            {t(
+                                                "walletSelector.passkeyCardSubtitle",
+                                            )}
+                                        </span>
+                                    </div>
+                                </Button>
+                            );
+                        })()}
+                    {passkeyOption && (
+                        <div
+                            role="separator"
+                            className="flex items-center gap-3 sm:col-span-2"
+                        >
+                            <span className="h-px flex-1 bg-border" />
+                            <span className="text-xs font-medium text-muted-foreground">
+                                {t("walletSelector.web3WalletsSeparator")}
+                            </span>
+                            <span className="h-px flex-1 bg-border" />
+                        </div>
+                    )}
+                    {otherOptions.map((wallet) => {
+                        // Use aria-disabled (not disabled) when offline so the
+                        // Offline badge tooltip can still receive hover events.
+                        const isOfflineBlocked = isWalletChoiceBlocked(
+                            wallet.id,
+                        );
+                        return (
+                            <Button
+                                key={wallet.id}
+                                type="button"
+                                variant="secondary"
+                                className={cn(
+                                    "h-26 items-start justify-start rounded-xl border border-border p-4 text-left hover:bg-muted",
+                                    isOfflineBlocked &&
+                                        !isConnectingWallet &&
+                                        "cursor-not-allowed opacity-50 hover:bg-secondary",
+                                )}
+                                onClick={() => handleWalletChoice(wallet)}
+                                disabled={isConnectingWallet}
+                                aria-disabled={
+                                    isConnectingWallet || isOfflineBlocked
+                                }
+                            >
+                                <div className="flex w-full flex-col gap-2">
+                                    <div className="flex items-center justify-between">
+                                        <WalletOptionIcon wallet={wallet} />
+                                        {(() => {
+                                            const badge =
+                                                getTopLevelBadge(wallet);
+                                            if (!badge) return null;
+                                            return (
+                                                <Pill
+                                                    title={badge.label}
+                                                    info={badge.tooltip}
+                                                    className={
+                                                        badge.isOffline
+                                                            ? "bg-general-warning-background-faded text-general-warning-foreground"
+                                                            : "bg-general-success-background-faded text-general-success-foreground"
+                                                    }
+                                                />
+                                            );
+                                        })()}
+                                    </div>
+                                    <div className="text-lg font-semibold">
+                                        {wallet.label}
+                                    </div>
+                                </div>
+                            </Button>
+                        );
+                    })}
+                </div>
+                <Dialog
+                    open={walletPickerOpen !== null}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setWalletPickerOpen(null);
+                            return;
+                        }
+                        setUnsupportedWallet(null);
+                        setIsGuideOpen(false);
+                    }}
+                >
+                    <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle>
+                                {walletPickerOpen === "near"
+                                    ? t("walletSelector.chooseNearWallet")
+                                    : t("walletSelector.chooseNearWallet")}
+                            </DialogTitle>
+                        </DialogHeader>
+                        <SlotWarning slot="login" className="mb-2" />
+                        <ConnectFailureAlert error={authError} />
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {walletPickerChoices.map((wallet) => {
+                                const isOfflineBlocked = isWalletChoiceBlocked(
+                                    wallet.id,
+                                );
+                                return (
+                                    <div key={wallet.id}>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            className={cn(
+                                                "h-26 w-full items-start justify-start rounded-xl border border-border p-4 text-left hover:bg-muted",
+                                                isOfflineBlocked &&
+                                                    !isConnectingWallet &&
+                                                    "cursor-not-allowed opacity-50 hover:bg-secondary",
+                                            )}
+                                            onClick={() =>
+                                                handleWalletChoice(wallet)
+                                            }
+                                            disabled={isConnectingWallet}
+                                            aria-disabled={
+                                                isConnectingWallet ||
+                                                isOfflineBlocked
+                                            }
+                                        >
+                                            <div className="flex w-full flex-col gap-2">
+                                                <div className="flex items-center justify-between">
+                                                    <WalletOptionIcon
+                                                        wallet={wallet}
+                                                    />
+                                                    {(() => {
+                                                        const badge =
+                                                            getModalBadge(
+                                                                wallet,
+                                                            );
+                                                        if (!badge) return null;
+                                                        return (
+                                                            <Pill
+                                                                title={
+                                                                    badge.label
+                                                                }
+                                                                info={
+                                                                    badge.tooltip
+                                                                }
+                                                                className={
+                                                                    badge.isOffline
+                                                                        ? "bg-general-warning-background-faded text-general-warning-foreground"
+                                                                        : "bg-general-success-background-faded text-general-success-foreground"
+                                                                }
+                                                            />
+                                                        );
+                                                    })()}
+                                                </div>
+                                                <div className="text-lg font-semibold">
+                                                    {wallet.label}
+                                                </div>
+                                            </div>
+                                        </Button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+                <Dialog
+                    open={isGuideOpen}
+                    onOpenChange={(open) => {
+                        if (open) {
+                            setUnsupportedWallet(null);
+                            setWalletPickerOpen(null);
+                        }
+                        setIsGuideOpen(open);
+                    }}
+                >
+                    <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle>
+                                {t("walletSelector.guide.title")}
+                            </DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                            <div className="rounded-xl border border-general-border p-4">
+                                <div className="space-y-3">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background">
+                                        <Wallet className="size-4" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <div className="text-lg font-semibold">
+                                            {t(
+                                                "walletSelector.guide.connectWalletTitle",
+                                            )}
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                            {t(
+                                                "walletSelector.guide.connectWalletDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="h-px bg-general-border my-3" />
+                                    <div className="space-y-2">
+                                        <p className="font-medium mb-1 text-sm">
+                                            {t(
+                                                "walletSelector.guide.pickThisIfYou",
+                                            )}
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground">
+                                            <li>
+                                                -{" "}
+                                                {t(
+                                                    "walletSelector.guide.connectWalletBullet1",
+                                                )}
+                                            </li>
+                                            <li>
+                                                -{" "}
+                                                {t(
+                                                    "walletSelector.guide.connectWalletBullet2",
+                                                )}
+                                            </li>
+                                            <li>
+                                                -{" "}
+                                                {t(
+                                                    "walletSelector.guide.connectWalletBullet3",
+                                                )}
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-general-border p-4">
+                                <div className="space-y-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <WalletOptionIcon
+                                            wallet={{
+                                                id: WALLET_IDS.PASSKEY,
+                                                label: "Passkey",
+                                                supported: true,
+                                            }}
+                                        />
+                                        <Pill
+                                            title={t(
+                                                "walletSelector.guide.passkeyNew",
+                                            )}
+                                            variant="info"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <div className="text-lg font-semibold">
+                                            {t(
+                                                "walletSelector.guide.passkeyTitle",
+                                            )}
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                            {t(
+                                                "walletSelector.guide.passkeyDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="h-px bg-general-border my-3" />
+                                    <div className="space-y-2">
+                                        <p className="font-medium mb-1 text-sm">
+                                            {t(
+                                                "walletSelector.guide.pickThisIfYou",
+                                            )}
+                                        </p>
+                                        <ul className="text-sm text-muted-foreground">
+                                            <li>
+                                                -{" "}
+                                                {t(
+                                                    "walletSelector.guide.passkeyBullet1",
+                                                )}
+                                            </li>
+                                            <li>
+                                                -{" "}
+                                                {t(
+                                                    "walletSelector.guide.passkeyBullet2",
+                                                )}
+                                            </li>
+                                            <li>
+                                                -{" "}
+                                                {t(
+                                                    "walletSelector.guide.passkeyBullet3",
+                                                )}
+                                            </li>
+                                        </ul>
+                                        <p className="text-xs text-muted-foreground mt-2">
+                                            {t(
+                                                "walletSelector.guide.passkeyDomainNote",
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-lg bg-general-tertiary px-4 py-3 text-sm text-muted-foreground">
+                                <span className="font-medium text-foreground">
+                                    {t("walletSelector.guide.recoveryLabel")}
+                                </span>{" "}
+                                {t("walletSelector.guide.recoveryText")}
+                            </div>
+
+                            {/* <div className="text-center">
+                            <a
+                                href="#"
+                                className="inline-flex items-center gap-2 text-sm font-medium underline-offset-2"
+                            >
+                                Read the full guide <span aria-hidden>↗</span>
+                            </a>
+                        </div> */}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+                <Dialog
+                    open={Boolean(unsupportedWallet)}
+                    onOpenChange={(open) => {
+                        if (!open && unsupportedWallet)
+                            closeUnsupportedWalletModal();
+                    }}
+                >
+                    <DialogContent className="max-w-2xl">
+                        <DialogHeader className="border-b-0 pb-0">
+                            <DialogTitle className="sr-only">
+                                {t("walletNotSupportedTitle", {
+                                    wallet: unsupportedWallet?.label ?? "",
+                                })}
+                            </DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-5 text-center">
+                            <div className="mx-auto flex items-center justify-center">
+                                {unsupportedWallet ? (
+                                    <WalletOptionIcon
+                                        wallet={unsupportedWallet}
+                                        size="xl"
+                                    />
+                                ) : (
+                                    <Wallet className="size-7" />
+                                )}
+                            </div>
+                            <div className="space-y-1">
+                                <h3 className="text-xl font-semibold">
+                                    {t("walletNotSupportedTitle", {
+                                        wallet: unsupportedWallet?.label ?? "",
+                                    })}
+                                </h3>
+                                <p className="text-muted-foreground text-sm">
+                                    {t("walletNotSupportedDescription", {
+                                        wallet: unsupportedWallet?.label ?? "",
+                                    })}
+                                </p>
+                            </div>
+                            <div className="space-y-3">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="w-full"
+                                    onClick={() =>
+                                        handleWalletChoice({
+                                            id: WALLET_IDS.NEAR,
+                                            label: "NEAR Wallets",
+                                            imgSrc: "/near.com.svg",
+                                            supported: true,
+                                        })
+                                    }
+                                >
+                                    {t("walletSelector.signInWithNear")}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="w-full"
+                                    onClick={() =>
+                                        handleWalletChoice({
+                                            id: WALLET_IDS.LEDGER,
+                                            label: "Ledger",
+                                            imgSrc: "/wallets/ledger.svg",
+                                            supported: true,
+                                        })
+                                    }
+                                >
+                                    {t("walletSelector.signInWithLedger")}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="w-full"
+                                    onClick={() =>
+                                        handleWalletChoice({
+                                            id: WALLET_IDS.EVM,
+                                            label: "EVM Wallets",
+                                            imgSrc: "/icons/metamask.svg",
+                                            supported: true,
+                                        })
+                                    }
+                                >
+                                    {t(
+                                        "walletSelector.signInWithWalletConnect",
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            </PageCard>
+            {showCreateTreasuryCta && (
+                <p className="mt-3 text-center text-sm">
+                    {t("dontHaveTreasuryLabel")}{" "}
+                    <Button
+                        type="button"
+                        variant="unstyled"
+                        className="h-auto p-0 underline"
+                        onClick={() => {
+                            if (onCreateTreasuryClick) {
+                                onCreateTreasuryClick();
+                                return;
+                            }
+                            router.push("/create");
+                        }}
+                    >
+                        {t("createOneLabel")}
+                    </Button>
+                </p>
+            )}
+        </>
+    );
+}
+
+`````
+
+### nt-fe/lib/auth-api.ts
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/lib/auth-api.ts
+
+`````typescript
+import { http as axios } from "@/lib/http";
+
+const BACKEND_API_BASE = `${process.env.NEXT_PUBLIC_BACKEND_API_BASE}/api`;
+
+// ============================================================================
+// Auth API Types
+// ============================================================================
+
+export interface AuthChallengeResponse {
+    /** Unique message the wallet authorizes via NEP-641 `resolveAuth`. */
+    payload: string;
+}
+
+export interface LoginRequest {
+    accountId: string;
+    /** JSON-stringified NEP-641 authorization blob from `wallet.resolveAuth`. */
+    authorization: string;
+}
+
+export interface LoginResponse {
+    accountId: string;
+    termsAccepted: boolean;
+    hasAcceptedV1Terms?: boolean;
+}
+
+export interface AuthUserInfo {
+    accountId: string;
+    termsAccepted: boolean;
+    hasAcceptedV1Terms?: boolean;
+}
+
+// ============================================================================
+// Auth API Functions
+// ============================================================================
+
+/**
+ * Request an authentication challenge (nonce).
+ */
+export async function getAuthChallenge(): Promise<AuthChallengeResponse> {
+    const response = await axios.post<AuthChallengeResponse>(
+        `${BACKEND_API_BASE}/auth/challenge`,
+        {},
+        { withCredentials: true },
+    );
+    return response.data;
+}
+
+/**
+ * Login with a signed message
+ * Verifies the signature and creates an auth session
+ */
+export async function authLogin(request: LoginRequest): Promise<LoginResponse> {
+    const response = await axios.post<LoginResponse>(
+        `${BACKEND_API_BASE}/auth/login`,
+        request,
+        { withCredentials: true },
+    );
+    return response.data;
+}
+
+/**
+ * Accept terms of service
+ * Requires authentication
+ */
+export async function acceptTerms(): Promise<void> {
+    await axios.post(
+        `${BACKEND_API_BASE}/auth/accept-terms`,
+        {},
+        { withCredentials: true },
+    );
+}
+
+/**
+ * Get current authenticated user info
+ * Returns null if not authenticated
+ */
+export async function getAuthMe(): Promise<AuthUserInfo | null> {
+    try {
+        const response = await axios.get<AuthUserInfo>(
+            `${BACKEND_API_BASE}/auth/me`,
+            { withCredentials: true },
+        );
+        return response.data;
+    } catch (error) {
+        // Not authenticated
+        return null;
+    }
+}
+
+/**
+ * Logout - clears the auth session
+ */
+export async function authLogout(): Promise<void> {
+    await axios.post(
+        `${BACKEND_API_BASE}/auth/logout`,
+        {},
+        { withCredentials: true },
+    );
+}
+
+`````
+
+### nt-be/src/auth/handlers.rs
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-be/src/auth/handlers.rs
+
+`````rust
+use crate::AppState;
+use crate::auth::resolve_auth::verify_resolve_auth;
+use crate::auth::{AuthError, AuthUser, create_jwt, jwt::hash_token, middleware::AUTH_COOKIE_NAME};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum_extra::extract::CookieJar;
+use axum_extra::extract::cookie::{Cookie, SameSite};
+use base64::Engine;
+use near_api::AccountId;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use std::sync::Arc;
+
+/// NEP-641 authorization purpose used for dApp authentication.
+const AUTH_PURPOSE: &str = "PROVE_OWNERSHIP";
+/// Bare recipient bound into the authorization. Must match the value the
+/// frontend passes to `wallet.resolveAuth(...)`.
+const AUTH_RECIPIENT: &str = "Trezu App";
+
+/// Response body for challenge creation.
+///
+/// The `payload` is the unique message the wallet authorizes (via NEP-641
+/// `resolveAuth`). It is echoed back unchanged inside the resolved
+/// authorization, which the backend matches against the issued challenge.
+#[derive(Debug, Serialize)]
+pub struct ChallengeResponse {
+    pub payload: String,
+}
+
+/// Request body for login.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginRequest {
+    pub account_id: AccountId,
+    /// JSON-stringified NEP-641 authorization blob produced by `resolveAuth`.
+    pub authorization: String,
+}
+
+/// Response body for /me endpoint
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeResponse {
+    pub account_id: String,
+    pub terms_accepted: bool,
+    pub has_accepted_v1_terms: bool,
+}
+
+#[derive(Debug, FromRow)]
+struct UserTermsRow {
+    id: uuid::Uuid,
+    account_id: String,
+    v1_terms_accepted_at: Option<chrono::DateTime<chrono::Utc>>,
+    v2_terms_accepted_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Create a new authentication challenge for the account.
+///
+/// Issues a unique, human-readable `payload` that the wallet authorizes via
+/// NEP-641 `resolveAuth`. The payload is stored (in the `nonce` column) so the
+/// resolved authorization can be matched against it on login and consumed once.
+pub async fn create_challenge(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ChallengeResponse>, AuthError> {
+    // A fresh random component guarantees uniqueness per session and prevents
+    // replay; the timestamp makes the prompt meaningful in the wallet UI.
+    let mut random = [0u8; 16];
+    rand::rng().fill_bytes(&mut random);
+    let request_id = base64::engine::general_purpose::STANDARD.encode(random);
+    let issued_at = chrono::Utc::now().to_rfc3339();
+    let payload = format!("Login to Trezu initiated at {issued_at} with request ID: {request_id}");
+
+    // Store the challenge payload (its bytes) so login can match and consume it.
+    sqlx::query!(
+        r#"
+        INSERT INTO auth_challenges (account_id, nonce, expires_at)
+        VALUES ('', $1, NOW() + INTERVAL '15 minutes')
+        "#,
+        payload.as_bytes()
+    )
+    .execute(&state.db_pool)
+    .await
+    .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+    // Clean up expired challenges
+    sqlx::query!("DELETE FROM auth_challenges WHERE expires_at < NOW()")
+        .execute(&state.db_pool)
+        .await
+        .ok(); // Ignore errors for cleanup
+
+    Ok(Json(ChallengeResponse { payload }))
+}
+
+/// Login with a NEP-641 authorization.
+///
+/// Resolves the authorization on-chain (recursively, via `w_resolve_auth`, with
+/// NEP-413 fallback for regular accounts), then confirms the resolved payload
+/// matches a challenge this backend issued and consumes it.
+pub async fn login(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Json(request): Json<LoginRequest>,
+) -> Result<(CookieJar, Json<MeResponse>), AuthError> {
+    // NEP-641: resolve the authorization to its unwrapped payload. The account
+    // contract (or NEP-413 fallback) is the authority for whether the holder is
+    // willing to authenticate.
+    let payload = verify_resolve_auth(
+        &state.network,
+        request.account_id.as_str(),
+        AUTH_PURPOSE,
+        AUTH_RECIPIENT,
+        &request.authorization,
+    )
+    .await
+    .map_err(AuthError::InvalidSignature)?;
+
+    // Confirm the resolved payload is a challenge we issued (not expired) and
+    // consume it atomically so it can't be replayed.
+    let consumed = sqlx::query!(
+        r#"
+        DELETE FROM auth_challenges
+        WHERE nonce = $1 AND expires_at > NOW()
+        RETURNING id
+        "#,
+        payload.as_bytes()
+    )
+    .fetch_optional(&state.db_pool)
+    .await
+    .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+    if consumed.is_none() {
+        return Err(AuthError::ChallengeNotFound);
+    }
+
+    let user = sqlx::query_as::<_, UserTermsRow>(
+        r#"
+        INSERT INTO users (account_id)
+        VALUES ($1)
+        ON CONFLICT (account_id) DO UPDATE SET updated_at = NOW()
+        RETURNING id, account_id, v1_terms_accepted_at, v2_terms_accepted_at
+        "#,
+    )
+    .bind(request.account_id.as_str())
+    .fetch_one(&state.db_pool)
+    .await
+    .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+    // Create JWT
+    let jwt_result = create_jwt(
+        &user.account_id,
+        state.env_vars.jwt_secret.as_bytes(),
+        state.env_vars.jwt_expiry_hours,
+    )?;
+
+    // Store the session in the database
+    sqlx::query!(
+        r#"
+        INSERT INTO user_sessions (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        "#,
+        user.id,
+        jwt_result.token_hash,
+        jwt_result.expires_at
+    )
+    .execute(&state.db_pool)
+    .await
+    .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+    // Clean up expired sessions periodically
+    sqlx::query!("DELETE FROM user_sessions WHERE expires_at < NOW()")
+        .execute(&state.db_pool)
+        .await
+        .ok();
+
+    // Create auth cookie
+    let cookie = Cookie::build((AUTH_COOKIE_NAME, jwt_result.token))
+        .path("/")
+        .http_only(true)
+        .secure(true) // Only send over HTTPS
+        .same_site(SameSite::Strict)
+        .max_age(time::Duration::hours(
+            state.env_vars.jwt_expiry_hours as i64,
+        ))
+        .build();
+
+    let jar = jar.add(cookie);
+
+    Ok((
+        jar,
+        Json(MeResponse {
+            account_id: user.account_id,
+            terms_accepted: user.v2_terms_accepted_at.is_some(),
+            has_accepted_v1_terms: user.v1_terms_accepted_at.is_some(),
+        }),
+    ))
+}
+
+/// Accept terms of service
+pub async fn accept_terms(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+) -> Result<impl IntoResponse, AuthError> {
+    sqlx::query!(
+        r#"
+        UPDATE users
+        SET
+            v2_terms_accepted_at = NOW(),
+            updated_at = NOW()
+        WHERE account_id = $1
+        "#,
+        auth_user.account_id.as_str()
+    )
+    .execute(&state.db_pool)
+    .await
+    .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Get current user info
+pub async fn get_me(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+) -> Result<Json<MeResponse>, AuthError> {
+    let user = sqlx::query_as::<_, UserTermsRow>(
+        r#"
+        SELECT id, account_id, v1_terms_accepted_at, v2_terms_accepted_at
+        FROM users
+        WHERE account_id = $1
+        "#,
+    )
+    .bind(auth_user.account_id.as_str())
+    .fetch_optional(&state.db_pool)
+    .await
+    .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+    match user {
+        Some(user) => Ok(Json(MeResponse {
+            account_id: user.account_id,
+            terms_accepted: user.v2_terms_accepted_at.is_some(),
+            has_accepted_v1_terms: user.v1_terms_accepted_at.is_some(),
+        })),
+        None => Err(AuthError::InvalidToken("User not found".to_string())),
+    }
+}
+
+/// Logout - revoke session and clear the auth cookie
+pub async fn logout(State(state): State<Arc<AppState>>, jar: CookieJar) -> impl IntoResponse {
+    // Get the token from the cookie and revoke the session
+    if let Some(token_cookie) = jar.get(AUTH_COOKIE_NAME) {
+        let token_hash = hash_token(token_cookie.value());
+
+        // Revoke the session
+        sqlx::query!(
+            "UPDATE user_sessions SET revoked_at = NOW() WHERE token_hash = $1",
+            token_hash
+        )
+        .execute(&state.db_pool)
+        .await
+        .ok();
+    }
+
+    let cookie = Cookie::build((AUTH_COOKIE_NAME, ""))
+        .path("/")
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::seconds(0))
+        .build();
+
+    (jar.add(cookie), StatusCode::OK)
+}
+
+`````
+
+### nt-be/src/auth/jwt.rs
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-be/src/auth/jwt.rs
+
+`````rust
+use crate::auth::AuthError;
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+/// JWT claims structure
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Claims {
+    /// Subject (account_id)
+    pub sub: String,
+    /// Expiration time (Unix timestamp)
+    pub exp: usize,
+    /// Issued at (Unix timestamp)
+    pub iat: usize,
+}
+
+/// Result of creating a JWT token
+pub struct JwtCreateResult {
+    pub token: String,
+    pub token_hash: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Create a new JWT token for the given account_id
+/// Returns the token, its hash (for storage), and expiration time
+pub fn create_jwt(
+    account_id: &str,
+    secret: &[u8],
+    expiry_hours: u64,
+) -> Result<JwtCreateResult, AuthError> {
+    let now = chrono::Utc::now();
+    let expiry = now + chrono::Duration::hours(expiry_hours as i64);
+
+    let claims = Claims {
+        sub: account_id.to_string(),
+        exp: expiry.timestamp() as usize,
+        iat: now.timestamp() as usize,
+    };
+
+    let header = Header::new(Algorithm::HS256);
+    let key = EncodingKey::from_secret(secret);
+
+    let token = encode(&header, &claims, &key)
+        .map_err(|e| AuthError::InternalError(format!("Failed to create JWT: {}", e)))?;
+
+    // Create a hash of the token for storage (we don't store the actual token)
+    let token_hash = hash_token(&token);
+
+    Ok(JwtCreateResult {
+        token,
+        token_hash,
+        expires_at: expiry,
+    })
+}
+
+/// Verify a JWT token and return the claims
+pub fn verify_jwt(token: &str, secret: &[u8]) -> Result<Claims, AuthError> {
+    let key = DecodingKey::from_secret(secret);
+    let validation = Validation::new(Algorithm::HS256);
+
+    let token_data = decode::<Claims>(token, &key, &validation).map_err(|e| match e.kind() {
+        jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
+        _ => AuthError::InvalidToken(format!("Failed to verify JWT: {}", e)),
+    })?;
+
+    Ok(token_data.claims)
+}
+
+/// Hash a token for storage (we don't store actual tokens)
+pub fn hash_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_and_verify_jwt() {
+        let secret = b"test-secret-key-for-jwt";
+        let account_id = "test.near";
+
+        let token = create_jwt(account_id, secret, 1).expect("Failed to create JWT");
+        let claims = verify_jwt(&token.token, secret).expect("Failed to verify JWT");
+
+        assert_eq!(claims.sub, account_id);
+    }
+
+    #[test]
+    fn test_verify_invalid_jwt() {
+        let secret = b"test-secret-key-for-jwt";
+        let result = verify_jwt("invalid-token", secret);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_wrong_secret() {
+        let secret1 = b"secret-1";
+        let secret2 = b"secret-2";
+        let account_id = "test.near";
+
+        let token = create_jwt(account_id, secret1, 1).expect("Failed to create JWT");
+        let result = verify_jwt(&token.token, secret2);
+        assert!(result.is_err());
+    }
+}
+
+`````
+
+### nt-be/src/auth/middleware.rs
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-be/src/auth/middleware.rs
+
+`````rust
+use crate::AppState;
+use crate::auth::{AuthError, jwt::hash_token, verify_jwt};
+use crate::handlers::treasury::policy::fetch_treasury_policy_cached;
+use axum::http::StatusCode;
+use axum::{extract::FromRequestParts, http::request::Parts};
+use axum_extra::extract::CookieJar;
+use near_account_id::AccountIdRef;
+use near_api::AccountId;
+use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::Arc;
+
+/// The name of the auth cookie
+pub const AUTH_COOKIE_NAME: &str = "auth_token";
+
+/// Authenticated user extracted from JWT cookie
+#[derive(Debug, Clone)]
+pub struct AuthUser {
+    pub account_id: AccountId,
+}
+
+impl AuthUser {
+    /// Verify this user is a policy member of the given DAO.
+    ///
+    /// Returns `AuthError::NotDaoMember` (403) if not found in `dao_members`
+    /// with `is_policy_member = true`.
+    pub async fn verify_dao_member(
+        &self,
+        db: &sqlx::PgPool,
+        dao_id: &AccountIdRef,
+    ) -> Result<(), AuthError> {
+        let member = sqlx::query!(
+            r#"
+            SELECT 1 AS ok FROM dao_members
+            WHERE account_id = $1 AND dao_id = $2 AND is_policy_member = true
+            "#,
+            self.account_id.as_str(),
+            dao_id.as_str()
+        )
+        .fetch_optional(db)
+        .await
+        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+        member.map(|_| ()).ok_or(AuthError::NotDaoMember)
+    }
+
+    /// `verify_dao_member` mapped for HTTP handlers: a genuine non-member is `403`, while a
+    /// DB/internal failure is logged and surfaced as `500` instead of being silently collapsed
+    /// into a misleading `403`. Handlers should prefer this over `.map_err(|_| forbidden())`.
+    pub async fn verify_dao_member_for_http(
+        &self,
+        db: &sqlx::PgPool,
+        dao_id: &AccountIdRef,
+    ) -> Result<(), (StatusCode, String)> {
+        self.verify_dao_member(db, dao_id).await.map_err(|e| {
+            if !matches!(e, AuthError::NotDaoMember) {
+                tracing::error!("verify_dao_member failed for {}: {e}", self.account_id);
+            }
+            e.status_and_message()
+        })
+    }
+
+    fn role_permission_strings(role: &Value) -> Option<&Vec<Value>> {
+        role.get("permissions").and_then(Value::as_array)
+    }
+
+    fn permission_grants_action(permission: &Value, action_name: &str) -> bool {
+        permission
+            .as_str()
+            .and_then(|permission| permission.split(':').nth(1))
+            .map(|action| action == action_name || action == "*")
+            .unwrap_or(false)
+    }
+
+    /// True when `kind` or `*` has `AddProposal`, `VoteApprove`, and `VoteReject` together.
+    /// A trio on a different kind does not count. A wildcard action (`{kind}:*`) is handled
+    /// separately by [`Self::permission_grants_action`].
+    fn has_add_approve_reject_for_kind(permissions: &[Value], kind: &str) -> bool {
+        let mut for_kind = HashSet::new();
+        let mut for_any = HashSet::new();
+        for permission in permissions {
+            let Some(permission) = permission.as_str() else {
+                continue;
+            };
+            let Some((permission_kind, action)) = permission.split_once(':') else {
+                continue;
+            };
+            if permission_kind != kind && permission_kind != "*" {
+                continue;
+            }
+            if !matches!(action, "AddProposal" | "VoteApprove" | "VoteReject") {
+                continue;
+            }
+            let actions = if permission_kind == "*" {
+                &mut for_any
+            } else {
+                &mut for_kind
+            };
+            actions.insert(action);
+            if actions.len() == 3 {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn role_has_action_permission(role: &Value, action_name: &str, kind: Option<&str>) -> bool {
+        let Some(permissions) = Self::role_permission_strings(role) else {
+            return false;
+        };
+
+        permissions
+            .iter()
+            .any(|permission| Self::permission_grants_action(permission, action_name))
+            || kind.is_some_and(|kind| Self::has_add_approve_reject_for_kind(permissions, kind))
+    }
+
+    fn role_applies_to_account(role: &Value, account_id: &AccountIdRef) -> bool {
+        let Some(kind) = role.get("kind") else {
+            return false;
+        };
+
+        if kind.as_str() == Some("Everyone") {
+            return true;
+        }
+
+        kind.get("Group")
+            .and_then(Value::as_array)
+            .map(|group| {
+                group
+                    .iter()
+                    .any(|member| member.as_str() == Some(account_id.as_str()))
+            })
+            .unwrap_or(false)
+    }
+
+    fn policy_allows_action_for_account(
+        policy: &Value,
+        account_id: &AccountIdRef,
+        action_name: &str,
+        kind: Option<&str>,
+    ) -> bool {
+        policy
+            .get("roles")
+            .and_then(Value::as_array)
+            .map(|roles| {
+                roles.iter().any(|role| {
+                    Self::role_has_action_permission(role, action_name, kind)
+                        && Self::role_applies_to_account(role, account_id)
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    pub async fn fetch_dao_policy(
+        &self,
+        state: &Arc<AppState>,
+        dao_id: &AccountIdRef,
+    ) -> Result<Value, (StatusCode, String)> {
+        fetch_treasury_policy_cached(state, dao_id, None).await
+    }
+
+    /// `kind` is the proposal type this check is about (`"policy"`, `"config"`, `"vote"`, …).
+    /// When it is set, a role also passes if that kind — or `*` — has `AddProposal`,
+    /// `VoteApprove`, and `VoteReject` together. Callers that are not about one kind pass `None`.
+    pub fn verify_can_perform_action_with_policy(
+        &self,
+        policy: &Value,
+        dao_id: &AccountIdRef,
+        action_name: &str,
+        kind: Option<&str>,
+    ) -> Result<(), (StatusCode, String)> {
+        if Self::policy_allows_action_for_account(policy, &self.account_id, action_name, kind) {
+            Ok(())
+        } else {
+            Err((
+                StatusCode::FORBIDDEN,
+                format!(
+                    "Account '{}' is not allowed to perform '{}' for treasury '{}'",
+                    self.account_id, action_name, dao_id
+                ),
+            ))
+        }
+    }
+
+    /// Verify this user can perform a policy action according to on-chain roles.
+    ///
+    /// This honors `Everyone` roles and wildcard permissions (e.g. `*:*`).
+    pub async fn verify_can_perform_action(
+        &self,
+        state: &Arc<AppState>,
+        dao_id: &AccountIdRef,
+        action_name: &str,
+        kind: Option<&str>,
+    ) -> Result<(), (StatusCode, String)> {
+        let policy = self.fetch_dao_policy(state, dao_id).await?;
+
+        self.verify_can_perform_action_with_policy(&policy, dao_id, action_name, kind)
+    }
+
+    /// Verify this user can submit proposals according to on-chain policy.
+    pub async fn verify_can_add_proposal(
+        &self,
+        state: &Arc<AppState>,
+        dao_id: &AccountIdRef,
+    ) -> Result<(), (StatusCode, String)> {
+        self.verify_can_perform_action(state, dao_id, "AddProposal", None)
+            .await
+    }
+
+    pub async fn verify_member_if_confidential(
+        &self,
+        db: &sqlx::PgPool,
+        dao_id: &AccountIdRef,
+    ) -> Result<bool, (StatusCode, String)> {
+        OptionalAuthUser::verify_member_if_confidential(
+            &OptionalAuthUser(Some(self.clone())),
+            db,
+            dao_id,
+        )
+        .await
+    }
+}
+
+impl FromRequestParts<Arc<AppState>> for AuthUser {
+    type Rejection = AuthError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        // Extract the cookie jar
+        let jar = CookieJar::from_request_parts(parts, state)
+            .await
+            .map_err(|_| AuthError::MissingToken)?;
+
+        // Get the auth token from cookie
+        let token = jar
+            .get(AUTH_COOKIE_NAME)
+            .map(|c| c.value().to_string())
+            .ok_or(AuthError::MissingToken)?;
+
+        // Verify the JWT signature and expiry
+        let claims = verify_jwt(&token, state.env_vars.jwt_secret.as_bytes())?;
+
+        // Check if the session is still valid (not revoked)
+        let token_hash = hash_token(&token);
+        let session = sqlx::query!(
+            r#"
+            SELECT id FROM user_sessions
+            WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()
+            "#,
+            token_hash
+        )
+        .fetch_optional(&state.db_pool)
+        .await
+        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+
+        if session.is_none() {
+            return Err(AuthError::RevokedToken);
+        }
+
+        Ok(AuthUser {
+            account_id: claims.sub.parse()?,
+        })
+    }
+}
+
+/// Optional auth user - doesn't fail if no token is present
+#[derive(Debug, Clone)]
+pub struct OptionalAuthUser(pub Option<AuthUser>);
+
+impl OptionalAuthUser {
+    /// If the given account is a confidential treasury, verify that the caller
+    /// is an authenticated DAO policy member.
+    ///
+    /// Returns `true` if the account is confidential, `false` otherwise.
+    /// Fails with 401/403 when confidential but the caller is missing or not a member.
+    pub async fn verify_member_if_confidential(
+        &self,
+        db: &sqlx::PgPool,
+        dao_id: &AccountIdRef,
+    ) -> Result<bool, (StatusCode, String)> {
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                ma.is_confidential_account,
+                dm.account_id AS "member_account_id?"
+            FROM monitored_accounts ma
+            LEFT JOIN dao_members dm
+                ON dm.dao_id = ma.account_id
+                AND dm.account_id = $2
+                AND dm.is_policy_member = true
+            WHERE ma.account_id = $1
+            "#,
+            dao_id.as_str(),
+            self.0.as_ref().map(|u| u.account_id.as_str()),
+        )
+        .fetch_optional(db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to check confidential status: {}", e),
+            )
+        })?;
+
+        let is_confidential = row
+            .as_ref()
+            .and_then(|r| r.is_confidential_account)
+            .unwrap_or(false);
+
+        if !is_confidential {
+            return Ok(false);
+        }
+
+        if self.0.is_none() {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Authentication required for confidential treasury".to_string(),
+            ));
+        }
+
+        if row.unwrap().member_account_id.is_none() {
+            return Err((StatusCode::FORBIDDEN, "Not a DAO member".to_string()));
+        }
+
+        Ok(true)
+    }
+}
+
+impl FromRequestParts<Arc<AppState>> for OptionalAuthUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        match AuthUser::from_request_parts(parts, state).await {
+            Ok(user) => Ok(OptionalAuthUser(Some(user))),
+            Err(_) => Ok(OptionalAuthUser(None)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::test_utils::{build_test_state, policy_granting, seed_treasury_policy};
+    use serde_json::json;
+
+    /// The role/permission rules themselves — pure, via the synchronous
+    /// `verify_can_perform_action_with_policy`, so no DB / cache / RPC is involved. Covers all
+    /// three advertised branches: a Group role gates by member + action, an `Everyone` role lets
+    /// any account through, and a `*:*` wildcard permits any action.
+    #[test]
+    fn policy_permission_rules() {
+        let dao: AccountId = "test-dao.sputnik-dao.near".parse().unwrap();
+        let alice = AuthUser {
+            account_id: "alice.near".parse().unwrap(),
+        };
+        let bob = AuthUser {
+            account_id: "bob.near".parse().unwrap(),
+        };
+
+        // Group role granting one action: only the member, only that action.
+        let group = policy_granting("alice.near", &["*:ChangePolicy"]);
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(&group, &dao, "ChangePolicy", None)
+                .is_ok()
+        );
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(&group, &dao, "AddProposal", None)
+                .is_err(),
+            "an action the role does not grant must be rejected"
+        );
+        assert!(
+            bob.verify_can_perform_action_with_policy(&group, &dao, "ChangePolicy", None)
+                .is_err(),
+            "an account outside the role's group must be rejected"
+        );
+
+        // `Everyone` role: any account may perform the granted action.
+        let everyone = json!({
+            "roles": [{ "name": "all", "kind": "Everyone", "permissions": ["*:ChangePolicy"] }],
+        });
+        assert!(
+            bob.verify_can_perform_action_with_policy(&everyone, &dao, "ChangePolicy", None)
+                .is_ok(),
+            "an Everyone role must let any account through"
+        );
+
+        // `*:*` wildcard permission: the member may perform any action.
+        let admin = policy_granting("alice.near", &["*:*"]);
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(&admin, &dao, "AddProposal", None)
+                .is_ok(),
+            "a *:* permission must grant any action"
+        );
+
+        // The trio counts only for the kind the caller asks about, or for `*`. The same trio on
+        // another kind does not. Two of the three, or the three split across kinds, do not.
+        for (permissions_kind, requested_kind) in
+            [("policy", "policy"), ("config", "config"), ("*", "vote")]
+        {
+            let permissions = [
+                format!("{permissions_kind}:AddProposal"),
+                format!("{permissions_kind}:VoteApprove"),
+                format!("{permissions_kind}:VoteReject"),
+            ];
+            let permission_refs: Vec<&str> = permissions.iter().map(String::as_str).collect();
+            let council = policy_granting("alice.near", &permission_refs);
+            assert!(
+                alice
+                    .verify_can_perform_action_with_policy(
+                        &council,
+                        &dao,
+                        "ChangePolicy",
+                        Some(requested_kind),
+                    )
+                    .is_ok(),
+                "{permissions_kind} trio must grant a {requested_kind} check",
+                permissions_kind = permissions_kind,
+                requested_kind = requested_kind,
+            );
+        }
+        let vote_only = policy_granting(
+            "alice.near",
+            &["vote:AddProposal", "vote:VoteApprove", "vote:VoteReject"],
+        );
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(
+                    &vote_only,
+                    &dao,
+                    "ChangePolicy",
+                    Some("policy")
+                )
+                .is_err(),
+            "a vote trio must not grant a policy check"
+        );
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(
+                    &vote_only,
+                    &dao,
+                    "ChangePolicy",
+                    Some("vote")
+                )
+                .is_ok(),
+            "a vote trio must grant a vote check"
+        );
+        let partial = policy_granting("alice.near", &["policy:AddProposal", "policy:VoteApprove"]);
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(
+                    &partial,
+                    &dao,
+                    "ChangePolicy",
+                    Some("policy")
+                )
+                .is_err(),
+            "two of the three kind actions must not grant the check"
+        );
+        let split = policy_granting(
+            "alice.near",
+            &[
+                "policy:AddProposal",
+                "call:VoteApprove",
+                "config:VoteReject",
+            ],
+        );
+        assert!(
+            alice
+                .verify_can_perform_action_with_policy(&split, &dao, "ChangePolicy", Some("policy"))
+                .is_err(),
+            "the three actions must share one proposal kind"
+        );
+    }
+
+    /// The cache seam this PR exists for: `seed_treasury_policy` must make
+    /// `verify_can_perform_action` (which fetches the policy through the cache) resolve without
+    /// touching the network. If the seeded key didn't match `fetch_treasury_policy_cached`'s key,
+    /// this would miss the cache and RPC a non-existent test DAO and error — so a passing assertion
+    /// also proves the seed and fetch keys agree.
+    #[sqlx::test]
+    async fn seeded_policy_is_served_from_cache(pool: sqlx::PgPool) {
+        let state = Arc::new(build_test_state(pool));
+        let dao: AccountId = "test-dao.sputnik-dao.near".parse().unwrap();
+        seed_treasury_policy(
+            &state,
+            &dao,
+            policy_granting("alice.near", &["*:ChangePolicy"]),
+        )
+        .await;
+
+        let alice = AuthUser {
+            account_id: "alice.near".parse().unwrap(),
+        };
+        assert!(
+            alice
+                .verify_can_perform_action(&state, &dao, "ChangePolicy", Some("policy"))
+                .await
+                .is_ok()
+        );
+    }
+}
+
+`````
+
+### nt-fe/stores/near-store.ts
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/stores/near-store.ts
+
+`````typescript
+"use client";
+
+import {
+    type ConnectorAction,
+    NearConnector,
+    type SignedMessage,
+} from "@hot-labs/near-connect";
+import type { SignDelegateActionsParams } from "@hot-labs/near-connect/build/types";
+import { useQueryClient } from "@tanstack/react-query";
+import SignClient from "@walletconnect/sign-client";
+import posthog from "posthog-js";
+import { toast } from "sonner";
+import { create } from "zustand";
+import { APP_WALLET_SETUP_URL } from "@/constants/config";
+import { markPaymentPending } from "@/features/onboarding/payment-pending";
+import { getAppErrorCopy, getNearStoreMessages } from "@/i18n/store-messages";
+import { trackEvent } from "@/lib/analytics";
+import { markDaoDirty, refreshProposal, relayDelegateAction } from "@/lib/api";
+import { appErrorAction, markShownToUser, toAppError } from "@/lib/app-error";
+import {
+    type AuthUserInfo,
+    acceptTerms as apiAcceptTerms,
+    authLogin,
+    authLogout,
+    getAuthChallenge,
+    getAuthMe,
+} from "@/lib/auth-api";
+import Big from "@/lib/big";
+import {
+    getKindFromProposal,
+    type ProposalPermissionKind,
+} from "@/lib/config-utils";
+import { ensurePasskeyWallet } from "@/lib/passkey-wallet";
+import {
+    getLastProposalId,
+    type Proposal,
+    type Vote as ProposalVote,
+} from "@/lib/proposals-api";
+import { reportError } from "@/lib/report-error";
+import { clearSessionQueries } from "@/lib/session-query-cleanup";
+import {
+    estimateProposalStorage,
+    estimateVoteStorage,
+} from "@/lib/sputnik-storage";
+import { cn } from "@/lib/utils";
+import { isUserRejection } from "@/lib/wallet-errors";
+import {
+    DIRECT_TRIGGER_WALLET_IDS,
+    isDirectTriggerWallet,
+    SELECTED_WALLET_STORAGE_KEY,
+    TARGET_WALLET_STORAGE_KEY,
+    WALLET_IDS,
+} from "@/lib/wallets";
+
+/**
+ * Ensures sandboxed iframes get bluetooth permission for Ledger Nano X BLE.
+ * @hot-labs/near-connect doesn't yet include bluetooth in iframe allow attributes,
+ * so we patch it via MutationObserver when iframes are added to the DOM.
+ */
+function ensureBluetoothIframePermission() {
+    if (typeof document === "undefined") return;
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (
+                    node instanceof HTMLIFrameElement &&
+                    node.getAttribute("sandbox")?.includes("allow-scripts")
+                ) {
+                    const allow = node.getAttribute("allow") || "";
+                    if (!allow.includes("bluetooth")) {
+                        node.setAttribute(
+                            "allow",
+                            allow + (allow ? " " : "") + "bluetooth *;",
+                        );
+                    }
+                }
+            }
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+}
+
+// Fallbacks if WASM estimator fails to load
+const FALLBACK_PROPOSAL_STORAGE_BYTES = Big(500);
+const FALLBACK_VOTE_STORAGE_BYTES = Big(100);
+
+// Gas budgeting for `act_proposal` (gas units; 1 TGas = 1e12).
+const ONE_TGAS = Big("1000000000000");
+// 25 TGas for running `act_proposal` itself plus its callback, on top of the
+// inner call gas it forwards.
+const ACT_PROPOSAL_OVERHEAD_GAS = ONE_TGAS.mul(25);
+// Hard per-transaction prepaid-gas budget (mainnet `max_total_prepaid_gas`).
+const TX_GAS_BUDGET = ONE_TGAS.mul(1000);
+// Non-FunctionCall votes (transfers, governance) are lightweight and don't
+// forward gas anywhere, so cap each at 100 TGas rather than handing them a
+// large share of the transaction budget.
+const NON_FUNCTION_CALL_VOTE_GAS = ONE_TGAS.mul(100);
+// Floor for a non-FunctionCall vote when the batch is already over budget, so
+// the action still carries valid (non-zero) gas even if the tx is rejected.
+const MIN_VOTE_GAS = ONE_TGAS.mul(10);
+
+/**
+ * Required prepaid gas for an `act_proposal` on a FunctionCall proposal, in gas
+ * units: the sum of the proposal's inner action gas plus
+ * {@link ACT_PROPOSAL_OVERHEAD_GAS}. `act_proposal` forwards each inner action's
+ * own gas to its cross-contract call, reserving it from its own remaining
+ * budget, so it must itself be prepaid with at least that much or it fails
+ * on-chain with "Exceeded the prepaid gas". Returns null for non-FunctionCall
+ * proposals (transfers, governance), which are lightweight.
+ */
+function functionCallProposalGas(proposalKind: unknown): Big | null {
+    if (
+        !proposalKind ||
+        typeof proposalKind !== "object" ||
+        !("FunctionCall" in proposalKind)
+    ) {
+        return null;
+    }
+    const functionCall = (
+        proposalKind as { FunctionCall?: { actions?: Array<{ gas?: string }> } }
+    ).FunctionCall;
+    const actions = functionCall?.actions ?? [];
+    const innerGas = actions.reduce(
+        (sum, action) => sum.add(Big(action?.gas ?? "0")),
+        Big(0),
+    );
+    const required = innerGas.add(ACT_PROPOSAL_OVERHEAD_GAS);
+    // A single action can never carry more than the whole-transaction budget.
+    return required.gt(TX_GAS_BUDGET) ? TX_GAS_BUDGET : required;
+}
+
+/**
+ * Distribute the {@link TX_GAS_BUDGET} across a batch of `act_proposal` votes.
+ *
+ * FunctionCall proposals are accounted first — each gets exactly what its inner
+ * calls need (see {@link functionCallProposalGas}). Each remaining vote gets an
+ * even share of what's left of the budget, capped at
+ * {@link NON_FUNCTION_CALL_VOTE_GAS} and floored at {@link MIN_VOTE_GAS}. The gas
+ * per vote is returned in the same order as `proposalKinds`.
+ */
+function distributeVoteGas(proposalKinds: unknown[]): string[] {
+    const requiredGas = proposalKinds.map(functionCallProposalGas);
+    const usedByFunctionCalls = requiredGas
+        .filter((gas): gas is Big => gas !== null)
+        .reduce((sum, gas) => sum.add(gas), Big(0));
+    const remainingCount = requiredGas.filter((gas) => gas === null).length;
+    const remainingBudget = TX_GAS_BUDGET.sub(usedByFunctionCalls);
+    let perRemaining = MIN_VOTE_GAS;
+    if (remainingCount > 0) {
+        // Round down so rounding never pushes the batch over the budget.
+        const evenShare = remainingBudget.div(remainingCount).round(0, 0);
+        if (evenShare.gt(NON_FUNCTION_CALL_VOTE_GAS)) {
+            perRemaining = NON_FUNCTION_CALL_VOTE_GAS;
+        } else if (evenShare.gt(MIN_VOTE_GAS)) {
+            perRemaining = evenShare;
+        }
+    }
+    return requiredGas.map((gas) => (gas ?? perRemaining).toFixed(0));
+}
+
+export interface CreateProposalParams {
+    treasuryId: string;
+    proposal: {
+        description: string;
+        kind: any;
+    };
+    proposalBond: string;
+    additionalTransactions?: Array<{
+        receiverId: string;
+        actions: ConnectorAction[];
+    }>;
+    /** Metric hint for the backend. "swap" | "payment" | "vote" | "other". Omit for non-tracked proposals. */
+    proposalType?: string;
+    /** True when payment recipient was selected from address book. */
+    addressBookPayment?: boolean;
+}
+
+interface Vote {
+    proposalId: number;
+    vote: ProposalVote;
+    proposal: Proposal;
+}
+
+// NEP-641 authorization purpose + bare recipient. Must match the backend's
+// AUTH_PURPOSE / AUTH_RECIPIENT (nt-be/src/auth/handlers.rs).
+const LOGIN_PURPOSE = "PROVE_OWNERSHIP" as const;
+const LOGIN_RECIPIENT = "Trezu App";
+// localStorage key @hot-labs/near-connect uses to remember the chosen wallet
+// (so `connector.wallet()` resolves it on later calls and after reload).
+// Our own copy of the forced direct-trigger wallet id (Ledger / EIP-712).
+// SELECTED_WALLET_STORAGE_KEY alone isn't enough: on reload the connector must
+// be rebuilt INCLUDING that wallet (not excluded), otherwise `connector.wallet()`
+// can't resolve it and the user is signed out. We persist the forced target
+// here and restore it on bare init().
+
+// WalletConnect Core must be initialized exactly once per page. The connector
+// is rebuilt whenever the excluded-wallet set changes (e.g. switching to the
+// EIP-712 walletcontract button), so we memoize a single SignClient and reuse
+// it across rebuilds. Re-initializing would trigger "WalletConnect Core is
+// already initialized" and strand the in-flight session, dropping the
+// signMessage result before it reaches the eip712 executor.
+let walletConnectClient: ReturnType<typeof SignClient.init> | null = null;
+function getWalletConnectClient(): ReturnType<typeof SignClient.init> {
+    if (!walletConnectClient) {
+        walletConnectClient = SignClient.init({
+            projectId: "127abc3c78912e30217f188a8c6f22c0",
+            metadata: {
+                name: "Trezu App",
+                description: "Confidential Multisig",
+                url: location.origin,
+                icons: ["/favicon_light.svg", "/favicon_dark.svg"],
+            },
+        });
+    }
+    return walletConnectClient;
+}
+
+interface NearStore {
+    // Wallet state
+    connector: NearConnector | null;
+    // Comma-joined list of excluded wallet ids the current connector was built
+    // with; used to decide whether it can be reused or must be rebuilt.
+    connectorExcludeKey: string | null;
+    walletAccountId: string | null; // Raw wallet account ID
+    isInitializing: boolean;
+
+    // Auth state
+    isAuthenticated: boolean;
+    hasAcceptedTerms: boolean;
+    isAuthenticating: boolean;
+    authError: string | null;
+    user: AuthUserInfo | null;
+
+    // Wallet actions
+    init: (options?: {
+        targetWalletId?: string;
+    }) => Promise<NearConnector | undefined>;
+    connect: (
+        walletId?: string,
+        onboardingPage?: "/" | "/create",
+    ) => Promise<void>;
+    disconnect: () => Promise<void>;
+
+    // Auth actions
+    acceptTerms: () => Promise<void>;
+    checkAuth: () => Promise<void>;
+    clearError: () => void;
+
+    // Transaction actions (require full auth)
+    signMessage: (
+        message: string,
+    ) => Promise<{ signatureData: SignedMessage; signedData: string }>;
+    signAndSendDelegateAction: (
+        treasuryId: string,
+        params: SignDelegateActionsParams,
+        storageBytes: Big,
+        proposalType?: string,
+        addressBookPayment?: boolean,
+    ) => Promise<number[]>;
+    createProposal: (params: CreateProposalParams) => Promise<number[]>;
+    voteProposals: (treasuryId: string, votes: Vote[]) => Promise<void>;
+}
+
+// Helper to check if fully authenticated
+const isFullyAuthenticated = (state: NearStore): boolean => {
+    return (
+        state.isAuthenticated &&
+        state.hasAcceptedTerms &&
+        !!state.walletAccountId
+    );
+};
+
+/**
+ * Tell the user why their action failed. Declining in the wallet keeps its
+ * own message; every other failure gets copy chosen by the backend's error
+ * code, plus a link to the requests list when the outcome is still unknown.
+ */
+function showActionError(error: unknown, treasuryId: string): void {
+    const appError = toAppError(error);
+    markShownToUser(error);
+    if (appError.code === "WALLET_REJECTED") {
+        toast.error(getNearStoreMessages().transactionNotApproved);
+        return;
+    }
+    trackEvent("transaction_failed", {
+        code: appError.code,
+        funds_state: appError.fundsState,
+        reason: appError.reason,
+    });
+
+    const action = appErrorAction(appError, treasuryId);
+    const copy = getAppErrorCopy(appError, action);
+    if (appError.requestId) {
+        console.error(
+            `Action failed (request ${appError.requestId})`,
+            appError,
+        );
+    }
+    toast.error(copy.title, {
+        description: copy.body,
+        duration: 15000,
+        action:
+            action && copy.actionLabel
+                ? {
+                      label: copy.actionLabel,
+                      onClick: () => window.open(action.href),
+                  }
+                : undefined,
+        // The CTA sits on its own line under the message, aligned with the
+        // text (icon width + gap), rather than squeezed beside it.
+        classNames: action
+            ? {
+                  toast: "flex-wrap",
+                  actionButton:
+                      "!basis-full !shrink !ml-[22px] !mt-1 !px-0 !bg-transparent !text-foreground underline underline-offset-2 hover:!bg-transparent !border-0",
+              }
+            : undefined,
+    });
+}
+
+export const useNearStore = create<NearStore>((set, get) => ({
+    // Wallet state
+    connector: null,
+    connectorExcludeKey: null,
+    walletAccountId: null,
+    isInitializing: true,
+
+    // Auth state
+    isAuthenticated: false,
+    hasAcceptedTerms: false,
+    isAuthenticating: false,
+    authError: null,
+    user: null,
+
+    init: async (options) => {
+        const { connector, connectorExcludeKey } = get();
+
+        // On a bare init() (app bootstrap / auth check, e.g. after a page
+        // reload) restore the previously forced direct-trigger wallet from our
+        // dedicated key, so the rebuilt connector still includes it and
+        // `connector.wallet()` can resolve the session. Explicit connect() calls
+        // pass an options object and control the target themselves.
+        const persistedTarget =
+            typeof window !== "undefined"
+                ? window.localStorage.getItem(TARGET_WALLET_STORAGE_KEY)
+                : null;
+        const restoredTarget =
+            persistedTarget && isDirectTriggerWallet(persistedTarget)
+                ? persistedTarget
+                : undefined;
+        const targetWalletId =
+            options === undefined ? restoredTarget : options.targetWalletId;
+
+        // Only the generic "NEAR" path (no forced wallet) excludes the
+        // direct-trigger wallets from the selector popup. Forcing a specific
+        // wallet (Ledger / EIP-712) excludes nothing.
+        const excludedWallets = targetWalletId
+            ? []
+            : [...DIRECT_TRIGGER_WALLET_IDS];
+        const excludeKey = excludedWallets.join(",");
+
+        // Reuse the existing connector when its exclusion set already matches
+        // what we need, or when no specific wallet is targeted.
+        if (
+            connector &&
+            (targetWalletId === undefined || connectorExcludeKey === excludeKey)
+        ) {
+            // The Passkey wallet is registered programmatically (Trezu-local
+            // manifest), not via the shared near-connect manifest — a reused
+            // connector may predate the passkey target, so register here too
+            // (registerWallet dedupes by id).
+            if (targetWalletId === WALLET_IDS.PASSKEY) {
+                await ensurePasskeyWallet(connector);
+            }
+            return connector;
+        }
+
+        let newConnector = null;
+
+        ensureBluetoothIframePermission();
+
+        try {
+            newConnector = new NearConnector({
+                network: "mainnet",
+                footerBranding: {
+                    icon: "/favicon_dark.svg",
+                    link: APP_WALLET_SETUP_URL ?? "https://wallet.near.org",
+                    linkText: "Need a wallet?",
+                    heading: "More wallets coming soon",
+                },
+                features: {
+                    signDelegateActions: true,
+                    resolveAuth: true,
+                },
+                excludedWallets,
+                walletConnect: getWalletConnectClient(),
+            });
+        } catch (err) {
+            set({ isInitializing: false });
+            return;
+        }
+
+        // Handle wallet sign out - reset all auth state
+        newConnector.on("wallet:signOut", () => {
+            set({
+                walletAccountId: null,
+                isAuthenticated: false,
+                hasAcceptedTerms: false,
+                isAuthenticating: false,
+                user: null,
+                authError: null,
+            });
+            posthog.reset();
+        });
+
+        // Login is driven explicitly in `connect()` via NEP-641 `resolveAuth`,
+        // so no sign-in event handlers are needed here.
+
+        // Passkey ships as a Trezu-hosted executor with a programmatic
+        // manifest (see lib/passkey-wallet.ts); only register it when the
+        // passkey flow is targeted so it never shows up in the generic
+        // NEAR-wallets popup (registered wallets bypass excludedWallets).
+        if (targetWalletId === WALLET_IDS.PASSKEY) {
+            await ensurePasskeyWallet(newConnector);
+        }
+
+        set({
+            connector: newConnector,
+            connectorExcludeKey: excludeKey,
+        });
+        set({ isInitializing: false });
+        return newConnector;
+    },
+
+    connect: async (walletId?: string, onboardingPage?: "/" | "/create") => {
+        const { init } = get();
+        const newConnector = await init({ targetWalletId: walletId });
+        if (!newConnector) {
+            throw new Error("Failed to initialize connector");
+        }
+
+        set({ isAuthenticating: true, authError: null });
+
+        try {
+            // 1. Backend issues a unique payload to authorize.
+            const { payload } = await getAuthChallenge();
+
+            // 2. Let the user pick a wallet (filtered to NEP-641-capable ones)
+            //    and remember it so later `connector.wallet()` calls resolve it.
+            const selectedWalletId =
+                walletId ??
+                (await newConnector.selectWallet({
+                    features: { resolveAuth: true },
+                }));
+            if (typeof window !== "undefined") {
+                window.localStorage.setItem(
+                    SELECTED_WALLET_STORAGE_KEY,
+                    selectedWalletId,
+                );
+                // Persist direct-trigger wallets under our own key so the
+                // connector is rebuilt including them after a reload. Clear it
+                // for generic NEAR wallets, which need no special inclusion.
+                if (isDirectTriggerWallet(selectedWalletId)) {
+                    window.localStorage.setItem(
+                        TARGET_WALLET_STORAGE_KEY,
+                        selectedWalletId,
+                    );
+                } else {
+                    window.localStorage.removeItem(TARGET_WALLET_STORAGE_KEY);
+                }
+            }
+            const wallet = await newConnector.wallet(selectedWalletId);
+
+            trackEvent("wallet-selected", {
+                wallet_id: wallet.manifest.id,
+                wallet_name: wallet.manifest.name,
+            });
+
+            // 3. NEP-641 PROVE_OWNERSHIP: sign in and authorize in one gesture.
+            //    Produces an authorization blob the backend resolves on-chain.
+            const { accountId, authorization } = await wallet.resolveAuth!({
+                network: "mainnet",
+                purpose: LOGIN_PURPOSE,
+                recipient: LOGIN_RECIPIENT,
+                payload,
+            });
+
+            // 4. Backend verifies the authorization and opens a session.
+            const loginResponse = await authLogin({ accountId, authorization });
+
+            set({
+                walletAccountId: accountId,
+                isAuthenticated: true,
+                hasAcceptedTerms: loginResponse.termsAccepted,
+                user: {
+                    accountId: loginResponse.accountId,
+                    termsAccepted: loginResponse.termsAccepted,
+                    hasAcceptedV1Terms:
+                        loginResponse.hasAcceptedV1Terms ?? false,
+                },
+                isAuthenticating: false,
+            });
+            posthog.identify(loginResponse.accountId, {
+                account_id: loginResponse.accountId,
+            });
+            trackEvent("wallet_connection_completed", {
+                source: "resolve-auth",
+                account_id: loginResponse.accountId,
+            });
+            if (onboardingPage) {
+                trackEvent("onboarding_login_completed", {
+                    page: onboardingPage,
+                    account_id: loginResponse.accountId,
+                });
+            }
+        } catch (error) {
+            if (!isUserRejection(error)) {
+                reportError(error, "Authentication failed", {
+                    code: "FE_WALLET_AUTH_FAILED",
+                });
+            } else {
+                console.error("Authentication failed:", error);
+            }
+            set({
+                isAuthenticating: false,
+                authError:
+                    error instanceof Error
+                        ? error.message
+                        : "Authentication failed",
+            });
+        }
+    },
+
+    disconnect: async () => {
+        const { connector } = get();
+
+        // Logout from backend first, then drop local auth state.
+        try {
+            await authLogout();
+        } catch (error) {
+            console.error("Logout error:", error);
+        }
+
+        // Reset auth state
+        set({
+            walletAccountId: null,
+            isAuthenticated: false,
+            hasAcceptedTerms: false,
+            isAuthenticating: false,
+            user: null,
+            authError: null,
+        });
+        posthog.reset();
+
+        // Forget the persisted direct-trigger wallet so the next reload doesn't
+        // restore a stale target.
+        if (typeof window !== "undefined") {
+            window.localStorage.removeItem(TARGET_WALLET_STORAGE_KEY);
+        }
+
+        // Disconnect wallet
+        if (connector) {
+            await connector.disconnect();
+        }
+    },
+
+    acceptTerms: async () => {
+        try {
+            await apiAcceptTerms();
+            set({ hasAcceptedTerms: true });
+            const user = get().user;
+            if (user) {
+                set({
+                    user: {
+                        ...user,
+                        termsAccepted: true,
+                    },
+                });
+            }
+            trackEvent("wallet_connection_completed", {
+                source: "terms-accepted",
+                account_id: get().walletAccountId ?? undefined,
+            });
+        } catch (error) {
+            console.error("Failed to accept terms:", error);
+            throw error;
+        }
+    },
+
+    checkAuth: async () => {
+        try {
+            const user = await getAuthMe();
+            if (user) {
+                // Verify the wallet connector still has accounts (e.g. localStorage wasn't cleared).
+                // If wallet state is gone, the session cookie is useless — log out.
+                const { connector, init } = get();
+                const conn = connector ?? (await init());
+                let walletValid = false;
+                if (conn) {
+                    try {
+                        await conn.wallet();
+                        walletValid = true;
+                    } catch {
+                        // Wallet has no accounts — localStorage was likely cleared
+                    }
+                }
+
+                if (!walletValid) {
+                    try {
+                        await authLogout();
+                    } catch {
+                        // ignore logout errors
+                    }
+                    set({
+                        isAuthenticated: false,
+                        hasAcceptedTerms: false,
+                        user: null,
+                        walletAccountId: null,
+                    });
+                    return;
+                }
+
+                set({
+                    isAuthenticated: true,
+                    hasAcceptedTerms: user.termsAccepted,
+                    user: {
+                        ...user,
+                        hasAcceptedV1Terms: user.hasAcceptedV1Terms ?? false,
+                    },
+                    walletAccountId: user.accountId,
+                });
+                posthog.identify(user.accountId, {
+                    account_id: user.accountId,
+                });
+            } else {
+                set({
+                    isAuthenticated: false,
+                    hasAcceptedTerms: false,
+                    user: null,
+                    walletAccountId: null,
+                });
+            }
+        } catch (error) {
+            set({
+                isAuthenticated: false,
+                hasAcceptedTerms: false,
+                user: null,
+                walletAccountId: null,
+            });
+        }
+    },
+
+    clearError: () => {
+        set({ authError: null });
+    },
+
+    signMessage: async (message: string) => {
+        const state = get();
+        if (!isFullyAuthenticated(state)) {
+            throw new Error(
+                "Not authorized. Please connect wallet and accept terms.",
+            );
+        }
+        if (!state.connector) {
+            throw new Error("Connector not initialized");
+        }
+        const wallet = await state.connector.wallet();
+        const signatureData = await wallet.signMessage({
+            message,
+            recipient: "",
+            nonce: new Uint8Array(),
+        });
+        return { signatureData, signedData: message };
+    },
+
+    signAndSendDelegateAction: async (
+        treasuryId: string,
+        params: SignDelegateActionsParams,
+        storageBytes: Big,
+        proposalType?: string,
+        addressBookPayment?: boolean,
+    ): Promise<number[]> => {
+        const state = get();
+        if (!isFullyAuthenticated(state)) {
+            throw new Error(
+                "Not authorized. Please connect wallet and accept terms.",
+            );
+        }
+        if (!state.connector) {
+            throw new Error("Connector not initialized");
+        }
+        const wallet = await state.connector.wallet();
+        const result = await wallet.signDelegateActions(params);
+
+        // Relay each signed delegate action to the backend for gas-sponsored submission.
+        // proposalType is only passed for the first action (the actual proposal/vote);
+        // subsequent actions are helper calls like storage_deposit.
+        const proposalIds: number[] = [];
+        for (let i = 0; i < result.signedDelegateActions.length; i++) {
+            const relayResult = await relayDelegateAction(
+                treasuryId,
+                result.signedDelegateActions[i],
+                storageBytes,
+                i === 0 ? proposalType : undefined,
+                i === 0 ? addressBookPayment : undefined,
+            );
+            if (relayResult.proposalIds) {
+                proposalIds.push(...relayResult.proposalIds);
+            }
+        }
+
+        return proposalIds;
+    },
+
+    createProposal: async (params: CreateProposalParams) => {
+        const state = get();
+        if (!isFullyAuthenticated(state)) {
+            toast.error(getNearStoreMessages().connectAndAcceptTerms);
+            throw new Error(
+                "Not authorized. Please connect wallet and accept terms.",
+            );
+        }
+        if (!state.connector) {
+            throw new Error("Connector not initialized");
+        }
+
+        const gas = "270000000000000";
+
+        let storageBytes: Big;
+        try {
+            const estimated = await estimateProposalStorage(
+                state.walletAccountId ?? "",
+                params.proposal,
+            );
+            storageBytes = Big(estimated + 50);
+        } catch (e) {
+            console.error("Failed to estimate vote storage:", e);
+            storageBytes = FALLBACK_PROPOSAL_STORAGE_BYTES;
+        }
+
+        const proposalTransaction = {
+            receiverId: params.treasuryId,
+            actions: [
+                {
+                    type: "FunctionCall",
+                    params: {
+                        methodName: "add_proposal",
+                        args: {
+                            proposal: params.proposal,
+                        },
+                        gas,
+                        deposit: params.proposalBond,
+                    },
+                } as ConnectorAction,
+            ],
+        };
+
+        const transactions = [
+            proposalTransaction,
+            ...(params.additionalTransactions || []),
+        ];
+
+        const delegateActions = transactions.map((t) => ({
+            receiverId: t.receiverId,
+            actions: t.actions,
+        }));
+
+        try {
+            return await get().signAndSendDelegateAction(
+                params.treasuryId,
+                { delegateActions, network: "mainnet" },
+                storageBytes,
+                params.proposalType,
+                params.addressBookPayment,
+            );
+        } catch (error) {
+            if (!isUserRejection(error)) {
+                reportError(error, "Failed to create proposal", {
+                    code: "FE_WALLET_SIGN_FAILED",
+                    priority: "p1",
+                });
+            } else {
+                console.error("Failed to create proposal:", error);
+            }
+            showActionError(error, params.treasuryId);
+            throw error;
+        }
+    },
+
+    voteProposals: async (treasuryId: string, votes: Vote[]) => {
+        const state = get();
+        if (!isFullyAuthenticated(state)) {
+            toast.error(getNearStoreMessages().connectAndAcceptTerms);
+            throw new Error(
+                "Not authorized. Please connect wallet and accept terms.",
+            );
+        }
+
+        const { signAndSendDelegateAction } = get();
+
+        let voteStorageBytes: Big;
+        try {
+            const estimations = await Promise.all(
+                votes.map((vote) =>
+                    estimateVoteStorage(
+                        state.walletAccountId ?? "",
+                        vote.proposal,
+                        `Vote${vote.vote}`,
+                    ),
+                ),
+            );
+            voteStorageBytes = estimations.reduce(
+                (sum, bytes) => sum.add(bytes + 10),
+                Big(0),
+            );
+        } catch (e) {
+            console.error("Failed to estimate vote storage:", e);
+            voteStorageBytes = FALLBACK_VOTE_STORAGE_BYTES.mul(votes.length);
+        }
+
+        const voteGas = distributeVoteGas(
+            votes.map((vote) => vote.proposal.kind),
+        );
+        const votesActions = votes.map((vote, index) => ({
+            type: "FunctionCall",
+            params: {
+                methodName: "act_proposal",
+                args: {
+                    id: vote.proposalId,
+                    action: `Vote${vote.vote}`,
+                    proposal: vote.proposal.kind,
+                },
+                gas: voteGas[index],
+                deposit: "0",
+            },
+        }));
+
+        const delegateActions = [
+            {
+                receiverId: treasuryId,
+                actions: votesActions as ConnectorAction[],
+            },
+        ];
+
+        try {
+            await signAndSendDelegateAction(
+                treasuryId,
+                { delegateActions, network: "mainnet" },
+                voteStorageBytes,
+                "vote",
+            );
+            trackEvent("proposal-voted", {
+                vote: votes[0]?.vote.toLowerCase(),
+                proposals_count: votes.length,
+                treasury_id: treasuryId,
+            });
+        } catch (error) {
+            if (!isUserRejection(error)) {
+                reportError(error, "Failed to vote proposals", {
+                    code: "FE_WALLET_SIGN_FAILED",
+                    priority: "p1",
+                });
+            } else {
+                console.error("Failed to vote proposals:", error);
+            }
+            showActionError(error, treasuryId);
+            throw error;
+        }
+    },
+}));
+
+// Convenience hook matching your existing API
+export const useNear = () => {
+    const {
+        connector,
+        walletAccountId,
+        isInitializing,
+        isAuthenticated,
+        hasAcceptedTerms,
+        isAuthenticating,
+        authError,
+        user,
+        connect,
+        disconnect,
+        acceptTerms,
+        checkAuth,
+        clearError,
+        signMessage,
+        createProposal: storeCreateProposal,
+        voteProposals: storeVoteProposals,
+    } = useNearStore();
+
+    const queryClient = useQueryClient();
+
+    // accountId is only available when fully authenticated (connected + auth + terms accepted)
+    const accountId =
+        isAuthenticated && hasAcceptedTerms ? walletAccountId : null;
+    const disconnectAndClearSession = async () => {
+        // Logout + reset auth state first, then clear the cached session data.
+        await disconnect();
+        await clearSessionQueries(queryClient);
+    };
+
+    const createProposal = async (
+        toastMessage: string,
+        params: CreateProposalParams,
+        showToast: boolean = true,
+    ) => {
+        const proposalIds = await storeCreateProposal(params);
+        // Nudge the backend about the new proposal (fire-and-forget): it
+        // re-fetches from chain RPC and projects it, so history reflects the
+        // proposal seconds after submission instead of at indexer speed. The
+        // relay reports the created ids; if it didn't, fall back to the DAO's
+        // counter minus one.
+        if (proposalIds.length > 0) {
+            for (const id of proposalIds) {
+                refreshProposal(params.treasuryId, id);
+            }
+        } else {
+            void getLastProposalId(params.treasuryId)
+                .then((count) => refreshProposal(params.treasuryId, count - 1))
+                .catch(() => {});
+        }
+        // Signal the onboarding flow that a payment request was just made so it
+        // can poll for it while the backend indexer catches up.
+        if (params.proposalType === "payment") {
+            markPaymentPending(params.treasuryId, queryClient);
+        }
+        // Invalidate queries after delay
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const promises = [
+            queryClient.invalidateQueries({
+                queryKey: ["proposals", params.treasuryId],
+                refetchType: "all",
+            }),
+            queryClient.invalidateQueries({
+                queryKey: ["proposal", params.treasuryId],
+            }),
+        ];
+        await Promise.all(promises);
+
+        // Show toast after invalidation
+        if (showToast) {
+            toast.success(toastMessage, {
+                duration: 10000,
+                action: {
+                    label: getNearStoreMessages().viewRequest,
+                    onClick: () =>
+                        window.open(
+                            `/${params.treasuryId}/requests?tab=InProgress`,
+                        ),
+                },
+                classNames: {
+                    toast: "!p-2 !px-4",
+                    actionButton:
+                        "!bg-transparent !text-foreground hover:!bg-muted !border-0",
+                    title: "!border-r !border-r-border !pr-4",
+                },
+            });
+        }
+    };
+
+    const voteProposals = async (treasuryId: string, votes: Vote[]) => {
+        await storeVoteProposals(treasuryId, votes);
+        // An approving vote may have just executed the proposal — nudge the
+        // backend (fire-and-forget) so the pending payment/exchange row
+        // appears in history before the indexer catches up.
+        for (const vote of votes) {
+            refreshProposal(treasuryId, vote.proposalId);
+        }
+        // Invalidate queries after delay and show toast simultaneously
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // Show toast at the same time as UI updates
+        const toastAction =
+            votes.length === 1 && votes[0].vote !== "Remove"
+                ? {
+                      label: getNearStoreMessages().viewRequest,
+                      onClick: () =>
+                          window.open(
+                              `/${treasuryId}/requests/${votes[0].proposalId}`,
+                          ),
+                  }
+                : undefined;
+        const messages = getNearStoreMessages();
+        const text =
+            votes.length === 1 && votes[0].vote === "Remove"
+                ? messages.proposalRemoved
+                : votes.length > 1
+                  ? messages.votesSubmitted
+                  : messages.voteSubmitted;
+        toast.success(text, {
+            duration: 10000,
+            action: toastAction,
+            classNames: {
+                toast: "!p-2 !px-4",
+                actionButton: cn(
+                    !toastAction ? "!hidden" : "",
+                    "!bg-transparent !text-foreground hover:!bg-muted !border-0",
+                ),
+                title: cn(
+                    toastAction ? "!border-r !border-r-border !pr-4" : "!pr-0",
+                ),
+            },
+        });
+
+        // Trigger invalidations (UI updates happen as queries refetch)
+        const promises = [
+            queryClient.invalidateQueries({
+                queryKey: ["proposals", treasuryId],
+                refetchType: "all",
+            }),
+            ...votes.map((vote) =>
+                queryClient.invalidateQueries({
+                    queryKey: [
+                        "proposal",
+                        treasuryId,
+                        vote.proposalId.toString(),
+                    ],
+                }),
+            ),
+            ...votes.map((vote) =>
+                queryClient.invalidateQueries({
+                    queryKey: [
+                        "proposal-transaction",
+                        treasuryId,
+                        vote.proposalId,
+                    ],
+                }),
+            ),
+        ];
+
+        await Promise.all(promises);
+
+        // Run policy-related invalidations in background
+        (async () => {
+            await queryClient.invalidateQueries({
+                queryKey: ["treasuryPolicy", treasuryId],
+            });
+            await queryClient.invalidateQueries({
+                queryKey: ["treasuryConfig", treasuryId],
+            });
+            await queryClient.invalidateQueries({
+                queryKey: ["userTreasuries", accountId],
+            });
+
+            const policyKinds: ProposalPermissionKind[] = [
+                "policy",
+                "add_member_to_role",
+                "remove_member_from_role",
+            ];
+            const hasPolicyVote = votes.some((v) => {
+                const kind = getKindFromProposal(v.proposal.kind);
+                return kind && policyKinds.includes(kind);
+            });
+            if (hasPolicyVote) {
+                await markDaoDirty(treasuryId);
+            }
+        })();
+    };
+
+    return {
+        connector,
+        accountId,
+        walletAccountId,
+        isInitializing,
+        isAuthenticated,
+        hasAcceptedTerms,
+        isAuthenticating,
+        authError,
+        user,
+        connect,
+        disconnect: disconnectAndClearSession,
+        acceptTerms,
+        checkAuth,
+        clearError,
+        signMessage,
+        createProposal,
+        voteProposals,
+    };
+};
+
+`````
+
+### nt-be/src/auth/resolve_auth.rs
+
+Source: https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-be/src/auth/resolve_auth.rs
+
+`````rust
+//! NEP-641 caller-side authorization resolver.
+//!
+//! Implements the canonical caller-side algorithm from `nep-0641.md`
+//! ("Caller-side resolution algorithm"), including the NEP-413 fallback for
+//! regular NEAR accounts that don't implement `w_resolve_auth`.
+//!
+//! The dApp backend pins a finalized `block_id` once, then recursively resolves
+//! the authorization graph against that single chain state. Each wallet contract
+//! is the authority for its own account via the `w_resolve_auth` view function;
+//! accounts without the method fall back to NEP-413 signature verification with
+//! the purpose bound into the recipient as `"<PURPOSE>@<recipient>"`.
+
+use crate::utils::contract_read_error::{is_method_not_found, is_unknown_account};
+use crate::utils::jsonrpc::create_rpc_client;
+use base64::Engine;
+use near_api::NetworkConfig;
+use near_jsonrpc_client::{JsonRpcClient, methods};
+use near_jsonrpc_primitives::types::query::{QueryResponseKind, RpcQueryError};
+use near_primitives::types::{BlockId, BlockReference, FunctionArgs};
+use near_primitives::views::QueryRequest;
+use serde::Deserialize;
+use std::future::Future;
+use std::pin::Pin;
+
+/// Maximum recursion depth for the authorization graph walk. Off-chain
+/// resolution is bounded by the caller; a malicious cyclic graph terminates
+/// here rather than looping forever.
+const MAX_RECURSION_DEPTH: usize = 8;
+
+/// Account-not-found can transiently appear right after a relayer creates a
+/// deterministic wallet-contract account (the FE's EIP-712 `resolveAuth`
+/// state-inits the account on-chain): the view call may race ahead of chain
+/// indexing. Retry with exponential backoff so the caller doesn't see a false
+/// negative.
+const ACCOUNT_NOT_FOUND_RETRY_DELAYS_MS: [u64; 5] = [1000, 2000, 4000, 8000, 16000];
+
+/// Outcome of resolving an authorization (sub-)graph.
+#[derive(Debug, PartialEq)]
+enum ResolveOutcome {
+    /// Authorization is valid; carries the unwrapped payload.
+    Resolved(String),
+    /// Authorization is invalid; carries a human-readable reason.
+    Invalid(String),
+    /// The account does not exist yet (drives the retry loop).
+    UnknownAccount(String),
+}
+
+/// On-chain `AuthorizationResolution` wire format (internally-tagged on
+/// `status`, SCREAMING_SNAKE_CASE variants).
+#[derive(Deserialize)]
+#[serde(tag = "status")]
+enum AuthorizationResolution {
+    #[serde(rename = "RESOLVED")]
+    Resolved { payload: String },
+    #[serde(rename = "PENDING")]
+    Pending {
+        payload: String,
+        #[serde(default)]
+        pending_authorizations: Vec<PendingAuthorization>,
+    },
+    #[serde(rename = "INVALID")]
+    Invalid {
+        #[serde(default)]
+        error_kind: Option<String>,
+        #[serde(default)]
+        error_message: Option<String>,
+    },
+}
+
+#[derive(Deserialize)]
+struct PendingAuthorization {
+    account_id: String,
+    purpose: String,
+    authorization: String,
+}
+
+/// NEP-413 `SignedMessage` as produced by the wallet adaptor's `resolveAuth`
+/// fallback (a JSON-stringified blob).
+#[derive(Deserialize)]
+struct Nep413SignedMessage {
+    #[serde(rename = "publicKey")]
+    public_key: String,
+    signature: String,
+    message: String,
+    recipient: String,
+    /// base64-encoded 32 bytes
+    nonce: String,
+    #[serde(rename = "callbackUrl", default)]
+    callback_url: Option<String>,
+}
+
+/// Verify a NEP-641 authorization for `account_id` and return the resolved
+/// payload on success.
+///
+/// `recipient` is the bare recipient (e.g. the dApp identifier); the purpose is
+/// bound into it as `"<PURPOSE>@<recipient>"` for the NEP-413 fallback path, and
+/// passed as-is to `w_resolve_auth` for the contract path.
+pub async fn verify_resolve_auth(
+    network: &NetworkConfig,
+    account_id: &str,
+    purpose: &str,
+    recipient: &str,
+    authorization: &str,
+) -> Result<String, String> {
+    let client = create_rpc_client(network).map_err(|e| e.to_string())?;
+
+    let mut last_invalid: Option<String> = None;
+
+    // Initial attempt + retries with backoff when the account doesn't exist yet.
+    for attempt in 0..=ACCOUNT_NOT_FOUND_RETRY_DELAYS_MS.len() {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                ACCOUNT_NOT_FOUND_RETRY_DELAYS_MS[attempt - 1],
+            ))
+            .await;
+        }
+
+        // Re-pin the block each attempt so access-key lookups in the NEP-413
+        // fallback see the latest chain state once the account materializes.
+        let block_height = fetch_final_block_height(&client).await?;
+
+        let outcome = resolve(
+            &client,
+            account_id.to_string(),
+            purpose.to_string(),
+            recipient.to_string(),
+            authorization.to_string(),
+            block_height,
+            0,
+        )
+        .await;
+
+        match outcome {
+            ResolveOutcome::Resolved(payload) => return Ok(payload),
+            ResolveOutcome::Invalid(msg) => return Err(msg),
+            ResolveOutcome::UnknownAccount(msg) => last_invalid = Some(msg),
+        }
+    }
+
+    Err(last_invalid.unwrap_or_else(|| "account does not exist".to_string()))
+}
+
+async fn fetch_final_block_height(client: &JsonRpcClient) -> Result<u64, String> {
+    let block = client
+        .call(methods::block::RpcBlockRequest {
+            block_reference: BlockReference::Finality(near_primitives::types::Finality::Final),
+        })
+        .await
+        .map_err(|e| format!("failed to fetch finalized block: {e}"))?;
+    Ok(block.header.height)
+}
+
+/// Recursively resolve an authorization sub-graph at the pinned `block_height`.
+///
+/// Args are owned (not borrowed) so the boxed future only ties its lifetime to
+/// `client`; recursive calls pass freshly-cloned sub-authorization values.
+fn resolve<'a>(
+    client: &'a JsonRpcClient,
+    account_id: String,
+    purpose: String,
+    recipient: String,
+    authorization: String,
+    block_height: u64,
+    depth: usize,
+) -> Pin<Box<dyn Future<Output = ResolveOutcome> + Send + 'a>> {
+    Box::pin(async move {
+        if depth > MAX_RECURSION_DEPTH {
+            return ResolveOutcome::Invalid("recursion limit exceeded".to_string());
+        }
+
+        let view_bytes = match view_w_resolve_auth(
+            client,
+            &account_id,
+            &purpose,
+            &recipient,
+            &authorization,
+            block_height,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                // NEP-641 §"NEP-413 fallback": fall back ONLY when the method
+                // genuinely does not exist (or no contract is deployed).
+                if is_method_not_found(&err) {
+                    return nep413_fallback(
+                        client,
+                        &account_id,
+                        &purpose,
+                        &recipient,
+                        &authorization,
+                        block_height,
+                    )
+                    .await;
+                }
+                if is_unknown_account(&err) {
+                    return ResolveOutcome::UnknownAccount(err);
+                }
+                return ResolveOutcome::Invalid(err);
+            }
+        };
+
+        let parsed: AuthorizationResolution = match serde_json::from_slice(&view_bytes) {
+            Ok(parsed) => parsed,
+            Err(_) => {
+                return ResolveOutcome::Invalid("w_resolve_auth returned non-JSON".to_string());
+            }
+        };
+
+        match parsed {
+            AuthorizationResolution::Resolved { payload } => ResolveOutcome::Resolved(payload),
+            // NEP-641 §"Authoritative contract method (no downgrade)": once
+            // w_resolve_auth returns INVALID we MUST NOT fall back to NEP-413.
+            AuthorizationResolution::Invalid {
+                error_kind,
+                error_message,
+            } => ResolveOutcome::Invalid(
+                error_message
+                    .or(error_kind)
+                    .unwrap_or_else(|| "INVALID".to_string()),
+            ),
+            AuthorizationResolution::Pending {
+                payload,
+                pending_authorizations,
+            } => {
+                if pending_authorizations.is_empty() {
+                    return ResolveOutcome::Invalid(
+                        "contract returned PENDING with no dependencies".to_string(),
+                    );
+                }
+                for sub in &pending_authorizations {
+                    let sub_outcome = resolve(
+                        client,
+                        sub.account_id.clone(),
+                        sub.purpose.clone(),
+                        recipient.clone(),
+                        sub.authorization.clone(),
+                        block_height,
+                        depth + 1,
+                    )
+                    .await;
+                    match sub_outcome {
+                        ResolveOutcome::Resolved(sub_payload) => {
+                            // Load-bearing invariant: payload identical across
+                            // the whole graph.
+                            if sub_payload != payload {
+                                return ResolveOutcome::Invalid(
+                                    "payload mismatch in sub-resolution".to_string(),
+                                );
+                            }
+                        }
+                        other => return other,
+                    }
+                }
+                ResolveOutcome::Resolved(payload)
+            }
+        }
+    })
+}
+
+/// Call `w_resolve_auth` on `account_id` at the pinned block. Returns the raw
+/// return bytes, or an `Err(String)` whose message is the debug representation
+/// of the RPC error (so callers can probe for method-not-found / unknown-account).
+async fn view_w_resolve_auth(
+    client: &JsonRpcClient,
+    account_id: &str,
+    purpose: &str,
+    recipient: &str,
+    authorization: &str,
+    block_height: u64,
+) -> Result<Vec<u8>, String> {
+    let account: near_primitives::types::AccountId = account_id
+        .parse()
+        .map_err(|e| format!("invalid account id \"{account_id}\": {e}"))?;
+
+    let args = serde_json::json!({
+        "purpose": purpose,
+        "recipient": recipient,
+        "authorization": authorization,
+    });
+    let args_bytes = serde_json::to_vec(&args).map_err(|e| e.to_string())?;
+
+    let request = methods::query::RpcQueryRequest {
+        block_reference: BlockReference::BlockId(BlockId::Height(block_height)),
+        request: QueryRequest::CallFunction {
+            account_id: account,
+            method_name: "w_resolve_auth".to_string(),
+            args: FunctionArgs::from(args_bytes),
+        },
+    };
+
+    let response = client
+        .call(request)
+        .await
+        // Debug repr surfaces the nested handler error (MethodResolveError,
+        // UnknownAccount, …) that the Display impl hides behind "Server error".
+        .map_err(|e| format!("{e:?}"))?;
+
+    match response.kind {
+        QueryResponseKind::CallResult(result) => Ok(result.result),
+        _ => Err("unexpected query response kind for call_function".to_string()),
+    }
+}
+
+/// NEP-641 §"NEP-413 fallback": verify the authorization as a NEP-413
+/// `SignedMessage` against the account's access keys at the pinned block.
+async fn nep413_fallback(
+    client: &JsonRpcClient,
+    account_id: &str,
+    purpose: &str,
+    recipient: &str,
+    authorization: &str,
+    block_height: u64,
+) -> ResolveOutcome {
+    let msg: Nep413SignedMessage = match serde_json::from_str(authorization) {
+        Ok(msg) => msg,
+        Err(_) => {
+            return ResolveOutcome::Invalid("authorization is not valid NEP-413 JSON".to_string());
+        }
+    };
+
+    // Purpose binding: the signed recipient must be "<PURPOSE>@<recipient>".
+    let expected_recipient = format!("{purpose}@{recipient}");
+    if msg.recipient != expected_recipient {
+        return ResolveOutcome::Invalid(format!(
+            "recipient mismatch: expected \"{expected_recipient}\""
+        ));
+    }
+
+    let nonce_bytes = match base64::engine::general_purpose::STANDARD.decode(&msg.nonce) {
+        Ok(bytes) => bytes,
+        Err(_) => return ResolveOutcome::Invalid("nonce is not valid base64".to_string()),
+    };
+    let nonce: [u8; 32] = match nonce_bytes.as_slice().try_into() {
+        Ok(nonce) => nonce,
+        Err(_) => return ResolveOutcome::Invalid("nep-413 nonce must be 32 bytes".to_string()),
+    };
+
+    let public_key: near_crypto::PublicKey = match msg.public_key.parse() {
+        Ok(pk) => pk,
+        Err(e) => return ResolveOutcome::Invalid(format!("invalid public key: {e}")),
+    };
+
+    // Verify the public key is registered on `account_id` at the pinned block.
+    // Query that single key rather than the full key list: an ML-DSA-65 key is
+    // stored on chain as its `ml-dsa-65-hash:` handle, which the RPC resolves
+    // from the full `ml-dsa-65:` key we have.
+    let account: near_primitives::types::AccountId = match account_id.parse() {
+        Ok(account) => account,
+        Err(e) => return ResolveOutcome::Invalid(format!("invalid account id: {e}")),
+    };
+    match client
+        .call(methods::query::RpcQueryRequest {
+            block_reference: BlockReference::BlockId(BlockId::Height(block_height)),
+            request: QueryRequest::ViewAccessKey {
+                account_id: account,
+                public_key: public_key.clone(),
+            },
+        })
+        .await
+    {
+        Ok(response) => {
+            if !matches!(response.kind, QueryResponseKind::AccessKey(_)) {
+                return ResolveOutcome::Invalid(
+                    "unexpected query response kind for access key".to_string(),
+                );
+            }
+        }
+        Err(e) => {
+            if let Some(RpcQueryError::UnknownAccessKey { .. }) = e.handler_error() {
+                return ResolveOutcome::Invalid(
+                    "public key not registered on account at pinned block".to_string(),
+                );
+            }
+            let err = format!("{e:?}");
+            if is_unknown_account(&err) {
+                return ResolveOutcome::UnknownAccount(err);
+            }
+            return ResolveOutcome::Invalid(format!("failed to fetch access key: {err}"));
+        }
+    }
+
+    // Recompute the NEP-413 borsh hash (tag 2^31 + 413) over the signed payload.
+    let hash = match (near_api::signer::NEP413Payload {
+        message: msg.message.clone(),
+        nonce,
+        recipient: msg.recipient.clone(),
+        callback_url: msg.callback_url.clone(),
+    })
+    .compute_hash()
+    {
+        Ok(hash) => hash,
+        Err(e) => return ResolveOutcome::Invalid(format!("failed to compute NEP-413 hash: {e}")),
+    };
+
+    let signature = match parse_signature(&msg.signature, public_key.key_type()) {
+        Ok(signature) => signature,
+        Err(e) => return ResolveOutcome::Invalid(e),
+    };
+
+    if signature.verify(hash.0.as_ref(), &public_key) {
+        ResolveOutcome::Resolved(msg.message)
+    } else {
+        ResolveOutcome::Invalid("bad signature".to_string())
+    }
+}
+
+/// Accept either raw base64 (NEP-413 `signMessage` canonical output) or
+/// `"<key-type>:<base58>"`, sized for the signing key's type.
+fn parse_signature(
+    s: &str,
+    key_type: near_crypto::KeyType,
+) -> Result<near_crypto::Signature, String> {
+    let raw = match s.strip_prefix(&format!("{key_type}:")) {
+        Some(b58) => bs58::decode(b58)
+            .into_vec()
+            .map_err(|e| format!("invalid base58 signature: {e}"))?,
+        None => base64::engine::general_purpose::STANDARD
+            .decode(s)
+            .map_err(|e| format!("invalid base64 signature: {e}"))?,
+    };
+    near_crypto::Signature::from_parts(key_type, &raw)
+        .map_err(|e| format!("invalid {key_type} signature: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nep413_hash(msg: &Nep413SignedMessage) -> Vec<u8> {
+        let nonce = base64::engine::general_purpose::STANDARD
+            .decode(&msg.nonce)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        near_api::signer::NEP413Payload {
+            message: msg.message.clone(),
+            nonce,
+            recipient: msg.recipient.clone(),
+            callback_url: msg.callback_url.clone(),
+        }
+        .compute_hash()
+        .unwrap()
+        .0
+        .to_vec()
+    }
+
+    fn assert_verifies(authorization: &str) {
+        let msg: Nep413SignedMessage = serde_json::from_str(authorization).unwrap();
+        let key: near_crypto::PublicKey = msg.public_key.parse().unwrap();
+        let signature = parse_signature(&msg.signature, key.key_type()).unwrap();
+        assert!(signature.verify(&nep413_hash(&msg), &key));
+
+        let tampered = Nep413SignedMessage {
+            message: format!("{}!", msg.message),
+            ..msg
+        };
+        assert!(!signature.verify(&nep413_hash(&tampered), &key));
+    }
+
+    #[test]
+    fn verifies_ml_dsa_65_signed_login() {
+        assert_verifies(ML_DSA_65_LOGIN);
+    }
+
+    const ML_DSA_65_LOGIN: &str = include_str!("testdata/nep413_ml_dsa_65_login.json");
+
+    /// Finalized shortly after the fixture login, with its ML-DSA-65 key on the
+    /// account. Queried on archival RPC so the fixture stays re-recordable.
+    const ML_DSA_65_LOGIN_BLOCK: u64 = 220_938_347;
+
+    async fn nep413_fallback_at_login_block(authorization: &str) -> ResolveOutcome {
+        let state = crate::utils::test_utils::init_test_state().await;
+        let client = create_rpc_client(&state.archival_network).unwrap();
+        nep413_fallback(
+            &client,
+            "nearprotocolua.near",
+            "PROVE_OWNERSHIP",
+            "Trezu App",
+            authorization,
+            ML_DSA_65_LOGIN_BLOCK,
+        )
+        .await
+    }
+
+    /// Locks in the RPC resolving a full `ml-dsa-65:` key to the account's
+    /// on-chain `ml-dsa-65-hash:` handle.
+    #[tokio::test]
+    async fn resolves_ml_dsa_65_login_on_chain() {
+        let msg: Nep413SignedMessage = serde_json::from_str(ML_DSA_65_LOGIN).unwrap();
+        assert_eq!(
+            nep413_fallback_at_login_block(ML_DSA_65_LOGIN).await,
+            ResolveOutcome::Resolved(msg.message)
+        );
+    }
+
+    /// Locks in the RPC's missing-key response shape and wording.
+    #[tokio::test]
+    async fn rejects_unregistered_ml_dsa_65_key() {
+        let mut authorization: serde_json::Value = serde_json::from_str(ML_DSA_65_LOGIN).unwrap();
+        let key = authorization["publicKey"].as_str().unwrap();
+        let (head, last) = key.split_at(key.len() - 1);
+        authorization["publicKey"] =
+            format!("{head}{}", if last == "1" { "2" } else { "1" }).into();
+
+        assert_eq!(
+            nep413_fallback_at_login_block(&authorization.to_string()).await,
+            ResolveOutcome::Invalid(
+                "public key not registered on account at pinned block".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn verifies_ed25519_signed_login() {
+        assert_verifies(
+            r#"{"accountId":"nearprotocolua.near","publicKey":"ed25519:34fZjXn7DmM2XrAxZWK7XE6EnZugAusMtkKM9Zbb3P4J","signature":"zoOHb9AmdY2Ujg6CmJedaAdmiZxlbCbE6l5vZbmn3FZumGjKiJehXJ1gsZd98gIXYP/yTqGmMOD/X8cqceIaCQ==","message":"Login to Trezu initiated at 2026-10-21T10:43:06.669144502+00:00 with request ID: AY2KXvdQszhz58SUIni4bg==","recipient":"PROVE_OWNERSHIP@Trezu App","nonce":"uRzKRsykx/xO8BmmAvyjoCAWQLTvvnTreu4LxDZDLe4=","callbackUrl":null,"state":null}"#,
+        );
+    }
+}
 
 `````

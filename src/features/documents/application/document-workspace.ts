@@ -7,8 +7,10 @@ import {
   createBlankDocument,
   createDocumentEnvelope,
   renameDocument,
+  withSubmission,
   withTreasury,
 } from "../model/document-envelope";
+import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 import type { DocumentRepository } from "../repository/document-repository";
 import type { SaveStatus } from "../session/document-persistence";
 import { createDocumentPersistence } from "../session/document-persistence";
@@ -134,6 +136,13 @@ export interface DocumentWorkspace {
    * network by itself.
    */
   setTreasury(treasury: TreasuryMetadata): Promise<void>;
+  /**
+   * Records a proposal-submission journal entry on the open document.
+   *
+   * The entry is what makes a retry safe, so it is persisted immediately rather
+   * than waiting for the next autosave. It does not modify the workbook.
+   */
+  recordSubmission(record: SubmissionRecord): Promise<void>;
   importJson(text: string): Promise<void>;
   importCsv(text: string, fileName: string): Promise<void>;
   /** Serializes the current document after flushing pending edits; no file I/O. */
@@ -393,6 +402,28 @@ export function createDocumentWorkspace(
     }
   };
 
+  const recordSubmission = async (record: SubmissionRecord) => {
+    const current = state.document;
+    if (!current) {
+      return;
+    }
+    try {
+      // Fold pending sheet edits in first, so the metadata write cannot revert
+      // a cell the user just typed into.
+      const base = await settlePendingEdits();
+      if (!base) {
+        return;
+      }
+      await replaceDocument(withSubmission(base, record, now()));
+    } catch (cause) {
+      noticeError(
+        cause instanceof Error
+          ? cause.message
+          : "The proposal record could not be saved.",
+      );
+    }
+  };
+
   const importJson = async (text: string) => {
     const result = parseDocumentJson(text);
     if (!result.ok) {
@@ -512,6 +543,7 @@ export function createDocumentWorkspace(
     createNewDocument: newDocument,
     rename,
     setTreasury: setTreasuryMetadata,
+    recordSubmission,
     importJson,
     importCsv,
     exportJson,

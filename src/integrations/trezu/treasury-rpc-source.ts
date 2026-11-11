@@ -45,6 +45,7 @@ const METHODS = {
   policy: "get_policy",
   proposals: "get_proposals",
   lastProposalId: "get_last_proposal_id",
+  proposal: "get_proposal",
 } as const;
 
 export function createNearRpcTreasurySource(
@@ -82,6 +83,23 @@ export function createNearRpcTreasurySource(
       }),
 
     readLastProposalId: (target) => call(target, METHODS.lastProposalId),
+
+    /**
+     * `get_proposal` is a view call. A missing proposal is a contract panic, so
+     * "unknown id" is reported by the caller as `null` only when the contract
+     * returned no result; a real error still propagates.
+     */
+    async readProposal(target, id) {
+      try {
+        return await call(target, METHODS.proposal, { id });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        if (/ERR_NO_PROPOSAL|does not exist|no result/i.test(message)) {
+          return null;
+        }
+        throw cause;
+      }
+    },
 
     async readBalances(target): Promise<unknown> {
       const account = await client.viewAccount({ accountId: target.accountId });

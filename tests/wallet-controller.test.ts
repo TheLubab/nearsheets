@@ -37,6 +37,9 @@ function fakeGateway(network: NearNetwork, connect: () => Promise<WalletConnecti
     async disconnect() {
       this.disconnected = true;
     },
+    async signAndSendTransaction() {
+      throw new Error("not used in controller tests");
+    },
     onSignOut(listener) {
       signOutListeners.add(listener);
       return () => signOutListeners.delete(listener);

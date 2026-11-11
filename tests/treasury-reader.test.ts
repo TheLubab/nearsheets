@@ -41,6 +41,7 @@ function source(overrides: Partial<TreasuryReadSource> = {}): TreasuryReadSource
     readBalances: async () => [
       { assetId: "near", symbol: "NEAR", decimals: 24, baseUnits: "1000000000000000000000000" },
     ],
+    readProposal: async () => null,
     ...overrides,
   };
 }
