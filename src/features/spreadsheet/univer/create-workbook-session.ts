@@ -1,3 +1,5 @@
+import type { ExecutionJournal } from '../../table/execution';
+import { TableRuntime } from '../../table/runtime';
 import type { IDisposable, IWorkbookData } from "@univerjs/core";
 import type { FUniver, WorkbookEngineFactory } from "./create-univer-engine";
 import type { FWorkbook } from "@univerjs/sheets/facade";
@@ -6,6 +8,7 @@ import { createUniverEngine } from "./create-univer-engine";
 export interface CreateWorkbookSessionOptions {
   /** Element that owns the editor. */
   container: HTMLElement;
+  executions?: ExecutionJournal;
   /** Optional starting snapshot; a blank worksheet is used when omitted. */
   initialWorkbook?: Partial<IWorkbookData>;
   /** Called once the editor reaches the steady lifecycle stage. */
@@ -27,6 +30,7 @@ export interface CreateWorkbookSessionOptions {
  */
 export interface WorkbookSession {
   readonly univerAPI: FUniver;
+  readonly tableRuntime?: TableRuntime;
   /** Current workbook, or `null` while none is active. */
   getWorkbook(): FWorkbook | null;
   /** Lossless Univer snapshot of the active workbook. */
@@ -41,7 +45,10 @@ export function createWorkbookSession(
   options: CreateWorkbookSessionOptions,
 ): WorkbookSession {
   const createEngine = options.createEngine ?? createUniverEngine;
+  const tableRuntime = new TableRuntime();
+  tableRuntime.executions = options.executions ?? {};
   const engine = createEngine({
+    tableRuntime,
     container: options.container,
     initialWorkbook: options.initialWorkbook,
   });
@@ -76,8 +83,17 @@ export function createWorkbookSession(
 
   const session: WorkbookSession = {
     univerAPI,
+    tableRuntime,
     getWorkbook,
-    saveSnapshot: () => getWorkbook()?.save() ?? null,
+    saveSnapshot: () => {
+      const snapshot = getWorkbook()?.save();
+      if (!snapshot) return null;
+      const resources = (snapshot.resources ?? []).filter(item => item.name !== 'nearsheets.table');
+      resources.push({name:'nearsheets.table',data:JSON.stringify({
+        operations:[...tableRuntime.operations], reads:[...tableRuntime.evidence], errors:[...tableRuntime.errors],
+      })});
+      return {...snapshot,resources};
+    },
     whenReady: () => {
       readyPromise ??= waitForSteadyStage().then(() => {
         if (!disposed) {
@@ -91,6 +107,7 @@ export function createWorkbookSession(
         return;
       }
       disposed = true;
+      tableRuntime.dispose();
       lifecycleListener?.dispose();
       lifecycleListener = null;
       settleReady();

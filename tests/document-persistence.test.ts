@@ -225,7 +225,7 @@ describe("document workspace", () => {
 
     const document = workspace.getState().document;
     expect(workspace.getState().status).toBe("ready");
-    expect(document?.title).toBe("Community budget");
+    expect(document?.title).toBe("Untitled workbook");
     expect(await repository.getMostRecent()).not.toBeNull();
   });
 
@@ -266,7 +266,7 @@ describe("document workspace", () => {
     await workspace.importJson(JSON.stringify(future));
 
     expect(workspace.getState().document?.documentId).toBe(before?.documentId);
-    expect(workspace.getState().notice?.message).toContain("Update Trezu Sheets");
+    expect(workspace.getState().notice?.message).toContain("Update NearSheets");
   });
 
   it("imports valid JSON as a new document without overwriting the original", async () => {
@@ -291,12 +291,12 @@ describe("document workspace", () => {
     const workspace = createWorkspace(repository);
     await workspace.start();
 
-    await workspace.importCsv("Contributor,Amount\nSara,30\n", "Community budget.csv");
+    await workspace.importCsv("Contributor,Amount\nSara,30\n", "Untitled workbook.csv");
 
     const document = workspace.getState().document;
-    expect(document?.title).toBe("Community budget");
+    expect(document?.title).toBe("Untitled workbook");
     const sheet = document?.workbook.sheets[document.workbook.sheetOrder[0]!];
-    expect(sheet?.name).toBe("Community budget");
+    expect(sheet?.name).toBe("Untitled workbook");
     expect(sheet?.cellData?.[1]?.[1]).toEqual({ v: 30 });
   });
 
@@ -311,7 +311,7 @@ describe("document workspace", () => {
     const second = createWorkspace(new MemoryDocumentRepository());
     await second.start();
     await second.importJson(exported!);
-    expect(second.getState().document?.title).toBe("Community budget");
+    expect(second.getState().document?.title).toBe("Untitled workbook");
   });
 
   it("creates a new blank document", async () => {
@@ -322,7 +322,7 @@ describe("document workspace", () => {
     await workspace.createNewDocument();
 
     const document = workspace.getState().document;
-    expect(document?.title).toBe("Untitled budget");
+    expect(document?.title).toBe("Untitled workbook");
     expect(document?.workbook.sheetOrder).toHaveLength(1);
   });
 
@@ -349,13 +349,13 @@ describe("document workspace", () => {
 
     const exported = await workspace.exportJson();
     expect(exported).toContain("Pending edit");
-    // The flush also stored the edit.
-    expect((await repository.getMostRecent())?.workbook.name).toBe("Pending edit");
+    // Export captures without requiring a write.
+    expect((await repository.getMostRecent())?.workbook.name).not.toBe("Pending edit");
 
     await workspace.flush();
   });
 
-  it("refuses to export rather than exporting stale content", async () => {
+  it("exports the current snapshot when storage fails", async () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
@@ -368,9 +368,7 @@ describe("document workspace", () => {
     };
 
     const exported = await workspace.exportJson();
-    expect(exported).toBeNull();
-    expect(workspace.getState().notice?.kind).toBe("error");
-    expect(workspace.getState().saveStatus).toBe("error");
+    expect(exported).toContain("Unsaved critical edit");
   });
 
   it("keeps the current document when pending edits cannot be saved", async () => {
@@ -412,7 +410,7 @@ describe("document workspace", () => {
     await flushTimers();
     detach();
 
-    expect((await repository.getMostRecent())?.workbook.name).toBe("Community budget");
+    expect((await repository.getMostRecent())?.workbook.name).toBe("Untitled workbook");
   });
 
   it("does not let a stale attach detach the live editor", async () => {

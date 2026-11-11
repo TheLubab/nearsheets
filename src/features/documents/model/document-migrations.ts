@@ -19,6 +19,18 @@ export interface DocumentMigration {
   migrate(document: Record<string, unknown>): Record<string, unknown>;
 }
 
+/** Rename function tokens only outside string literals. User labels remain untouched. */
+export function migrateFormula(formula: string): string {
+  const names: Record<string, string> = {
+    TREZU_AMOUNT: "NEAR_AMOUNT", TREZU_ACCOUNT: "NEAR_ACCOUNT",
+    TREZU_REFERENCE: "NS_REFERENCE", TREZU_SUM_REF: "NS_SUM_REF",
+    TREZU_MISSING: "NS_MISSING", TREZU_DRAFT: "NS_LEGACY_DRAFT",
+  };
+  return formula.split(/("(?:[^"]|"")*"|'(?:[^']|'')*')/g).map((part, index) =>
+    index % 2 ? part : part.replace(/\bTREZU_[A-Z_]+(?=\s*\()/gi,
+      (token) => names[token.toUpperCase()] ?? token)).join("");
+}
+
 export const documentMigrations: readonly DocumentMigration[] = [
   {
     toVersion: 2,
@@ -30,6 +42,22 @@ export const documentMigrations: readonly DocumentMigration[] = [
      * were never recorded.
      */
     migrate: (document) => ({ ...document, submissions: {} }),
+  },
+  {
+    toVersion: 3,
+    migrate: (document) => {
+      const workbook = structuredClone(document.workbook) as Record<string, unknown>;
+      const sheets = workbook.sheets as Record<string, { cellData?: Record<string, Record<string, { f?: string }>> }>;
+      for (const sheet of Object.values(sheets ?? {})) {
+        for (const row of Object.values(sheet.cellData ?? {})) {
+          for (const cell of Object.values(row)) {
+            if (typeof cell.f === "string") cell.f = migrateFormula(cell.f);
+          }
+        }
+      }
+      return { ...document, format: DOCUMENT_FORMAT, workbook, executions: {},
+        customFunctions: { catalogVersion: 2 } };
+    },
   },
 ];
 
@@ -57,11 +85,11 @@ export function migrateDocument(
   }
 
   // Check the format marker before the version: unrelated JSON usually has no
-  // `schemaVersion`, and "not a Trezu Sheets document" is the useful message.
-  if ((value as { format?: unknown }).format !== DOCUMENT_FORMAT) {
+  // `schemaVersion`, and "not a NearSheets document" is the useful message.
+  if (![DOCUMENT_FORMAT, "trezu-sheets"].includes(String((value as { format?: unknown }).format))) {
     return fail(
       "not-a-trezu-document",
-      "This is not a Trezu Sheets document. Use Import to load a Trezu Sheets .json file.",
+      "This is not a NearSheets document. Use Import to load a NearSheets .json file.",
     );
   }
 
@@ -72,7 +100,7 @@ export function migrateDocument(
   if (initial > supportedVersion) {
     return fail(
       "unsupported-future-version",
-      `This document uses format version ${initial}, but this application supports up to version ${supportedVersion}. Update Trezu Sheets instead of importing it here.`,
+      `This document uses format version ${initial}, but this application supports up to version ${supportedVersion}. Update NearSheets instead of importing it here.`,
     );
   }
 
@@ -88,7 +116,11 @@ export function migrateDocument(
         `No migration exists from document version ${version} to ${version + 1}.`,
       );
     }
-    current = { ...step.migrate(current), schemaVersion: version + 1 };
+    try {
+      current = { ...step.migrate(current), schemaVersion: version + 1 };
+    } catch {
+      return fail("invalid-document", "Document migration failed. The original has been preserved.");
+    }
     version += 1;
     applied.push(version);
   }

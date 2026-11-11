@@ -40,3 +40,14 @@ Native JSON and CSV import/export are in scope. JSON preserves workbook structur
 ## Changing a decision
 
 Decisions are subject to new evidence and agent suggestions. If another approach would work better, explain the evidence and tradeoff and ask the user directly. Do not invent workarounds or silently reduce scope. Routine implementation details within the agreed direction remain autonomous.
+
+## Refactor decisions and implementation evidence (2026-11-11)
+
+- The user selected **a new proposal when an exact Intents quote expires**. Never refresh recipient, route or amounts under an old approval. NearSheets embeds route expiry in its proposal description and refuses an approval vote after expiry. The underlying Sputnik transfer cannot enforce that deadline against other clients; the preview states this contract limitation.
+- The user authorized adopting a verified compatible connector. Published 0.12.0 lacks `resolveAuth`; the application now pins Trezu's fork at `f2fc9706262b70bd4cc0901e20cc3757c882fb5c`. See the wallet reference compatibility audit. No upstream setup scripts were run.
+- Table formulas and explicit execution share a workbook-owned runtime/cache. Action references determine identity; full payload/policy/proposal snapshots determine revisions. Calculation has no wallet capability. Exact string values are quoted through Univer's facade to prevent numeric-string coercion.
+- The native envelope is v3 (`nearsheets`); v1/v2 names/formulas migrate explicitly. The old IndexedDB database name remains the compatibility store. Export captures the live workbook independently of repository writes.
+- The user chose **browser-first NearSheets without a separate app login or authentication server**. Current workbooks are local; reads use RPC/public APIs and transactions use the wallet and contract permissions. Keep the tested service-auth boundary optional and dormant until a named integration requires it. Missing service auth is not a blocker and must not produce an unavailable-service login panel.
+- The original Univer formatting toolbar, formula bar and sheet controls stay visible by default. The user chose a native fourth **Blockchain** ribbon tab, alongside **Home**, **Formulas** and **View**. Its groups contain read functions, action preparation, refresh/details and selection-aware review. Switching tabs swaps toolbar contents; there is no separate NEAR strip. File commands remain in the document menu. The installed Univer 1.4.0 workbench requires both header and toolbar enabled to render its formatting ribbon. Scope application control styles so they do not override Univer controls. User visual acceptance remains pending.
+
+- Function discovery follows the native Formulas ribbon: Accounts & tokens, DAO, Swaps, Contracts & staking and Results dropdowns. A choice opens a focused argument dialog with a captured target cell and formula preview, without a search sidebar. Insertion never executes actions.

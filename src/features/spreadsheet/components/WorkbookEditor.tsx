@@ -1,3 +1,4 @@
+import type { ExecutionJournal } from '../../table/execution';
 import { useEffect, useRef, useState } from "react";
 import type { WorkbookSnapshot } from "../model/workbook-snapshot";
 import type { WorkbookSession } from "../univer/create-workbook-session";
@@ -12,6 +13,7 @@ export interface WorkbookEditorProps {
    * the source of truth for the open workbook.
    */
   documentId: string;
+  executions?: ExecutionJournal;
   initialWorkbook: WorkbookSnapshot;
   /**
    * Called when the editor is ready. `documentId` is the document this editor
@@ -30,6 +32,7 @@ export interface WorkbookEditorProps {
  */
 export function WorkbookEditor({
   documentId,
+  executions,
   initialWorkbook,
   onSessionReady,
 }: WorkbookEditorProps) {
@@ -60,6 +63,7 @@ export function WorkbookEditor({
     try {
       session = createWorkbookSession({
         container: host,
+        executions,
         initialWorkbook: initialWorkbookRef.current,
         onReady: (readySession) => {
           if (!active) {

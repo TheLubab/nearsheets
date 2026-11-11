@@ -26,7 +26,7 @@ describe("exact amounts", () => {
     }
     expect(result.amount.display).toBe("0.3");
     expect(result.amount.baseUnits).toBe("30");
-    expect(result.rounded).toBe(false);
+    expect(result.rounded).toBe(true);
   });
 
   it("rejects meaningful extra precision instead of rounding silently", () => {

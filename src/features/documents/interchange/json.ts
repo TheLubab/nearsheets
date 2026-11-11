@@ -1,11 +1,12 @@
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
+import { executionSchema } from '../../table/execution';
 import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 import type { DocumentEnvelope } from "../model/document-envelope";
 import type { DocumentValidationError } from "../model/document-schema";
 import { migrateDocument } from "../model/document-migrations";
 
 /**
- * Native Trezu Sheets JSON is the lossless interchange format. It contains the
+ * Native NearSheets JSON is the lossless interchange format. It contains the
  * full document envelope, including the Univer snapshot, so formulas,
  * formatting, all sheets and plugin resources survive a round trip.
  *
@@ -67,6 +68,7 @@ export function serializeDocument(document: DocumentEnvelope): string {
         serializeSubmission(record),
       ]),
     ),
+    executions: Object.fromEntries(Object.entries(document.executions).map(([key,value])=>[key,executionSchema.parse(value)])),
     workbook: document.workbook,
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
@@ -128,7 +130,7 @@ export function documentFileName(title: string, extension: "json" | "csv"): stri
     .replace(/[^a-z0-9\u00c0-\uffff]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
-  return `${base.length > 0 ? base : "trezu-budget"}.${extension}`;
+  return `${base.length > 0 ? base : "nearsheets"}.${extension}`;
 }
 
 /** Builds a CSV export of one sheet using this document's title. */

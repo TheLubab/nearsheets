@@ -1,5 +1,5 @@
+import type { Execution } from '../../table/execution';
 import { LocaleType } from "@univerjs/core";
-import { STARTER_SHEET_IDS, createStarterWorkbook } from "../../spreadsheet/model/starter-workbook";
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import type { WorkbookSession } from "../../spreadsheet/univer/create-workbook-session";
 import type { DocumentEnvelope, TreasuryMetadata } from "../model/document-envelope";
@@ -9,6 +9,7 @@ import {
   renameDocument,
   withSubmission,
   withTreasury,
+  withWorkbookSnapshot,
 } from "../model/document-envelope";
 import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 import type { DocumentRepository } from "../repository/document-repository";
@@ -32,7 +33,7 @@ import {
  * It is built structurally so creating a document never requires a mounted
  * editor; the editor adopts the snapshot on its next mount.
  */
-export function createBlankWorkbook(name = "Untitled budget"): WorkbookSnapshot {
+export function createBlankWorkbook(name = "Untitled workbook"): WorkbookSnapshot {
   const sheetId = `sheet-${globalThis.crypto.randomUUID()}`;
   return {
     id: `workbook-${globalThis.crypto.randomUUID()}`,
@@ -51,7 +52,7 @@ export function createBlankWorkbook(name = "Untitled budget"): WorkbookSnapshot 
 }
 
 /** Fixed id for the generated first document, so a raced startup cannot duplicate it. */
-export const STARTER_DOCUMENT_ID = "trezu-starter-document";
+export const STARTER_DOCUMENT_ID = "nearsheets-starter-document";
 
 /** The first document this application ever creates. */
 export function createStarterDocument(
@@ -59,20 +60,11 @@ export function createStarterDocument(
   now?: Date,
   documentId: string = STARTER_DOCUMENT_ID,
 ): DocumentEnvelope {
-  const workbook = createStarterWorkbook();
-  // The starter workbook is intentionally partial; fill in the structural
-  // fields the envelope and editor require.
-  const snapshot: WorkbookSnapshot = {
-    ...workbook,
-    id: workbook.id ?? `workbook-${globalThis.crypto.randomUUID()}`,
-    name: workbook.name ?? "Community budget",
-    sheets: workbook.sheets ?? {},
-    sheetOrder: workbook.sheetOrder ?? [STARTER_SHEET_IDS.budget, STARTER_SHEET_IDS.summary],
-  };
+  const workbook = createBlankWorkbook("Untitled workbook");
   return createDocumentEnvelope({
     documentId,
-    title: "Community budget",
-    workbook: snapshot,
+    title: "Untitled workbook",
+    workbook,
     treasury,
     now,
   });
@@ -127,6 +119,8 @@ export interface DocumentWorkspace {
   /** Flushes unsaved edits before the editor is replaced or unloaded. */
   flush(): Promise<void>;
   createNewDocument(): Promise<void>;
+  listDocuments(): ReturnType<DocumentRepository["list"]>;
+  openSavedDocument(documentId: string): Promise<void>;
   rename(title: string): Promise<void>;
   /**
    * Records which treasury the open document belongs to.
@@ -142,6 +136,7 @@ export interface DocumentWorkspace {
    * The entry is what makes a retry safe, so it is persisted immediately rather
    * than waiting for the next autosave. It does not modify the workbook.
    */
+  recordExecution(record: Execution,documentId?:string): Promise<void>;
   recordSubmission(record: SubmissionRecord): Promise<void>;
   importJson(text: string): Promise<void>;
   importCsv(text: string, fileName: string): Promise<void>;
@@ -233,17 +228,18 @@ export function createDocumentWorkspace(
    * export must not pretend to be current.
    */
   const settlePendingEdits = async (): Promise<DocumentEnvelope | null> => {
-    if (!persistence) {
-      return state.document;
-    }
-    await persistence.saveNow();
-    if (persistence.getState().status === "error") {
-      noticeError(
-        "Your latest edits could not be captured, so nothing was exported. Fix the save error and try again.",
-      );
+    const base = persistence?.getDocument() ?? state.document;
+    if (!base) return null;
+    // Capture the live editor independently of IndexedDB availability.
+    if (!session) return base;
+    try {
+      const snapshot = session.saveSnapshot();
+      if (!snapshot) throw new Error("The current workbook cannot be captured.");
+      return withWorkbookSnapshot(base, snapshot, now());
+    } catch (cause) {
+      noticeError(cause instanceof Error ? cause.message : "Snapshot failed.");
       return null;
     }
-    return persistence.getDocument();
   };
 
   const start = async (): Promise<void> => {
@@ -269,15 +265,16 @@ export function createDocumentWorkspace(
         if (disposed) {
           return;
         }
+        setDocument(createBlankDocument(createBlankWorkbook(),treasury,{now:now()}));
         publish({
-          status: "error",
-          document: null,
+          saveStatus: "error",
+          saveError: cause instanceof Error ? cause.message : 'Storage unavailable.',
           notice: {
             kind: "error",
             message:
               cause instanceof Error
-                ? cause.message
-                : "Local documents could not be opened.",
+                ? `Storage unavailable: ${cause.message}. This workbook is in memory; export JSON to keep it.`
+                : "Storage unavailable. This workbook is in memory; export JSON to keep it.",
           },
         });
       }
@@ -541,9 +538,32 @@ export function createDocumentWorkspace(
       await persistence?.saveNow();
     },
     createNewDocument: newDocument,
+    listDocuments: () => repository.list(),
+    openSavedDocument: async (id) => {
+      try {
+        if (!(await settleBeforeSwitch())) return;
+        const saved = await repository.get(id);
+        if (!saved) throw new Error("This document is no longer available.");
+        openDocument(saved);
+        publish({ notice: null });
+      } catch (cause) {
+        noticeError(cause instanceof Error ? cause.message : "Could not open document.");
+      }
+    },
     rename,
     setTreasury: setTreasuryMetadata,
     recordSubmission,
+    recordExecution: async (record,documentId) => {
+      if(documentId && documentId !== state.document?.documentId) {
+        const original = await repository.get(documentId);
+        if(!original)throw new Error('The originating document is no longer available.');
+        await repository.save({...original,executions:{...original.executions,[record.id]:record}});
+        return;
+      }
+      const base = await settlePendingEdits();
+      if (!base) throw new Error("The current workbook could not be captured.");
+      await replaceDocument({...base, executions:{...base.executions,[record.id]:record}});
+    },
     importJson,
     importCsv,
     exportJson,

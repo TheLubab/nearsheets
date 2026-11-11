@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTION_DRAFT_KIND,
-  INTENTS_STAGE,
   draftFromRow,
   draftId,
   draftIdFromParts,
@@ -73,26 +72,10 @@ describe("action drafts", () => {
     ).toBe(draft?.id);
   });
 
-  it("starts Intents drafts at the planned stage with no invented quote", () => {
-    const result = draftFromRow(
-      validRow({ assetId: "nep141:wrap.near", decimals: 24, symbol: "wNEAR" }),
-      treasury,
-    );
-    expect(result.draft?.kind).toBe(ACTION_DRAFT_KIND.intents);
-    expect(result.draft?.intents).toMatchObject({
-      stage: INTENTS_STAGE.planned,
-      provider: null,
-      quoteExpiresAt: null,
-      quoteOriginBaseUnits: null,
-      quoteDestinationBaseUnits: null,
-    });
-  });
-
-  it("requires explicit precision for a non-NEAR asset", () => {
-    const result = draftFromRow(validRow({ assetId: "nep141:usdc.near" }), treasury);
+  it("rejects legacy token rows even with manually supplied precision", () => {
+    const result = draftFromRow(validRow({assetId:"nep141:wrap.near",decimals:24}),treasury);
     expect(result.draft).toBeNull();
-    expect(result.issues.map((issue) => issue.field)).toContain("decimals");
-    expect(result.issues[0]?.message).toMatch(/precision is required/);
+    expect(result.issues[0]?.message).toMatch(/verified token metadata/);
   });
 
   it("reports every blocking problem in one pass", () => {
@@ -130,8 +113,8 @@ describe("action drafts", () => {
     const draft = draftFromRow(
       validRow({ assetId: "nep141:wrap.near", decimals: 24 }),
       treasury,
-    ).draft!;
-    const result = validateActionDraft({ ...draft, intents: null });
+    ).draft;
+    const result = validateActionDraft({ ...draft, kind:"intents-delivery", intents: null });
     expect(result.ok).toBe(false);
   });
 

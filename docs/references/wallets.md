@@ -1013,3 +1013,11 @@ Source: https://raw.githubusercontent.com/azbang/near-connect/e71894f7e69d9ea66a
 }
 
 `````
+
+## NearSheets connector compatibility audit (2026-11-11)
+
+The published `@hot-labs/near-connect@0.12.0` installed at the start of this refactor has no `resolveAuth` in its packaged wallet types. Trezu's captured `nt-fe/package.json` instead selects `NEAR-DevHub/near-connect#passkeys-20261104`. That branch was resolved to immutable commit `f2fc9706262b70bd4cc0901e20cc3757c882fb5c` and adopted as an archive dependency, with install lifecycle scripts disabled.
+
+Sources: [Trezu manifest at the captured revision](https://github.com/NEAR-DevHub/trezu/blob/62cf0e41d4b2d2358a496d47c80fcd2e59094247/nt-fe/package.json), [connector revision](https://github.com/NEAR-DevHub/near-connect/tree/f2fc9706262b70bd4cc0901e20cc3757c882fb5c).
+
+Both source and packaged `build/types/index.d.ts` declare `ResolveAuthParams`, `ResolveAuthResponse` and optional `NearWalletBase.resolveAuth`. Packaged sandbox/parent-frame adapters call the native method or the NEP-413 fallback. The fork's package version is 0.11.5; the immutable revision identifies this API rather than its older version label. NearSheets uses recipient `NearSheets`, purpose `PROVE_OWNERSHIP`, and a backend-issued payload. This verifies client capability, not a deployed backend or session verifier. The user subsequently chose browser-first workflows without a separate app-login backend. This compatibility support is retained for optional future authenticated integrations.

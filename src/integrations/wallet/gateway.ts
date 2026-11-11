@@ -52,7 +52,9 @@ export interface WalletGateway {
   readonly network: NearNetwork;
   /** Resolves with the signed-in account; rejects with `WalletCancelledError` when the user closes the selector. */
   connect(): Promise<WalletConnection>;
+  restore?(): Promise<WalletConnection|null>;
   disconnect(): Promise<void>;
+  authorize?(payload:string): Promise<{accountId:string;authorization:string}>;
   /**
    * Asks the wallet to sign and send one transaction.
    *
@@ -89,6 +91,13 @@ function asWalletError(cause: unknown): Error {
   return error;
 }
 
+/** Only an explicit user refusal proves a signing request was not broadcast. */
+function asSigningError(cause:unknown):Error {
+  const error=cause instanceof Error?cause:new Error(String(cause));
+  if(cause instanceof WalletCancelledError || /^(user rejected|rejected by user|user denied|user cancel(?:led|ed))\b/i.test(error.message)) return new WalletCancelledError(error.message);
+  return error;
+}
+
 type Connector = Awaited<ReturnType<typeof createWalletConnector>>;
 type ConnectorWallet = Awaited<ReturnType<Connector["connect"]>>;
 
@@ -115,6 +124,7 @@ export function createConnectorWalletGateway(
     }
     connectorPromise ??= createWalletConnector(config, options.network).then(
       (created) => {
+        if (disposed) throw new Error('Wallet connection was closed.');
         created.on("wallet:signOut", handleSignOut);
         connector = created;
         return created;
@@ -125,6 +135,17 @@ export function createConnectorWalletGateway(
 
   return {
     network: options.network,
+    async restore() {
+      const active = await getConnector();
+      try {
+        const restored = await active.getConnectedWallet();
+        if(disposed) return null;
+        const account = restored.accounts[0];
+        if (!account) return null;
+        wallet = restored.wallet;
+        return {accountId:account.accountId,publicKey:account.publicKey ?? null,walletId:wallet.manifest.id,walletName:wallet.manifest.name};
+      } catch { return null; }
+    },
 
     async connect(): Promise<WalletConnection> {
       try {
@@ -145,6 +166,11 @@ export function createConnectorWalletGateway(
       } catch (cause) {
         throw asWalletError(cause);
       }
+    },
+
+    async authorize(payload:string) {
+      if (!wallet?.resolveAuth) throw new Error('This wallet does not support ownership authorization.');
+      return wallet.resolveAuth({network:options.network,purpose:'PROVE_OWNERSHIP',recipient:'NearSheets',payload});
     },
 
     async disconnect(): Promise<void> {
@@ -174,7 +200,7 @@ export function createConnectorWalletGateway(
           network: options.network,
         });
       } catch (cause) {
-        throw asWalletError(cause);
+        throw asSigningError(cause);
       }
     },
 

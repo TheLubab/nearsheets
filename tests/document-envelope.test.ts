@@ -16,7 +16,7 @@ import {
 import { migrateDocument } from "../src/features/documents/model/document-migrations";
 import { validateDocument } from "../src/features/documents/model/document-schema";
 import type { WorkbookSnapshot } from "../src/features/spreadsheet/model/workbook-snapshot";
-import { createStarterWorkbook } from "../src/features/spreadsheet/model/starter-workbook";
+import { createStarterWorkbook } from "./fixtures/legacy-workbook";
 
 const fixedNow = new Date("2026-11-11T09:00:00.000Z");
 
@@ -108,7 +108,7 @@ describe("native JSON round trip", () => {
   it("writes a stable, human-readable file with a trailing newline", () => {
     const json = serializeDocument(document());
     expect(json.endsWith("\n")).toBe(true);
-    expect(json).toContain('"format": "trezu-sheets"');
+    expect(json).toContain('"format": "nearsheets"');
     // No secrets or exported function implementations.
     expect(json).not.toContain("privateKey");
     expect(json).not.toMatch(/"function":/);
@@ -139,7 +139,7 @@ describe("native JSON round trip", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("unsupported-future-version");
-      expect(result.error.message).toContain("Update Trezu Sheets");
+      expect(result.error.message).toContain("Update NearSheets");
     }
   });
 
@@ -156,7 +156,7 @@ describe("native JSON round trip", () => {
     expect(documentFileName("Community Budget (2026)", "json")).toBe(
       "community-budget-2026.json",
     );
-    expect(documentFileName("   ", "csv")).toBe("trezu-budget.csv");
+    expect(documentFileName("   ", "csv")).toBe("nearsheets.csv");
   });
 });
 
@@ -209,6 +209,7 @@ describe("document validation and migration", () => {
         toVersion: 2,
         migrate: (value) => ({ ...value, submissions: {} }),
       },
+      { toVersion: 3, migrate: value => value },
     ]);
 
     expect(result.ok).toBe(true);

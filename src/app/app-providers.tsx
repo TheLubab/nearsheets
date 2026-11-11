@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { env } from "../config/env";
+import { cookieAuthApi,createServiceAuth } from '../features/auth/session';
 import type { NearNetwork } from "../integrations/near/network";
 import { createConnectorWalletGateway } from "../integrations/wallet/gateway";
 import type { TreasuryReader } from "../features/treasury/application/treasury-reader";
@@ -24,6 +25,7 @@ import {
  */
 export interface Integrations {
   wallet: WalletController;
+  auth: ReturnType<typeof createServiceAuth>;
   /**
    * Reader for a specific network.
    *
@@ -63,7 +65,7 @@ function readerFor(network: NearNetwork): TreasuryReader {
   }
   const reader = createTreasuryReaderForNetwork({
     network,
-    allowDemo: DEMO_DATA_ENABLED,
+    allowDemo: false,
   });
   READER_CACHE.set(network, reader);
   return reader;
@@ -96,18 +98,35 @@ export function AppProviders({ children }: AppProvidersProps) {
     }),
   );
 
-  // The controller deliberately has no teardown effect: React Strict Mode runs
-  // an effect cleanup after the first development-only mount, which would
-  // dispose the same instance the second mount keeps using. It is memoized for
-  // the app's lifetime, and `dispose()` exists for tests and future unmounts.
+  const lifecycle = useRef(0);
+  const [auth] = useState(() => createServiceAuth(env.VITE_AUTH_API_URL ? cookieAuthApi(env.VITE_AUTH_API_URL,
+    async (payload,network) => {
+      if (wallet.getState().network !== network) throw new Error('Wallet network changed.');
+      return wallet.authorize(payload);
+    }) : null));
+  useEffect(() => {
+    const mounted = ++lifecycle.current;
+    void auth.restore();
+    void wallet.restore();
+    let previousIdentity = wallet.getState().connection?.accountId + ':' + wallet.getState().network;
+    const detach = wallet.subscribe(() => {
+      const state = wallet.getState(), service = auth.getState().session;
+      const identity = state.connection?.accountId + ':' + state.network;
+      if(identity !== previousIdentity && auth.getState().status === 'authenticating') void auth.logout();
+      previousIdentity = identity;
+      if (service && ((state.status === 'connected' && (service.accountId !== state.connection?.accountId || service.network !== state.network)) || state.status === 'disconnected')) void auth.logout();
+    });
+    return () => { detach();queueMicrotask(() => { if (lifecycle.current === mounted) {wallet.dispose();auth.dispose();} }); };
+  }, [wallet,auth]);
 
   const integrations = useMemo<Integrations>(
     () => ({
       wallet,
+      auth,
       readerFor,
       statuses: describeIntegrations(env, { demoData: DEMO_DATA_ENABLED }),
     }),
-    [wallet],
+    [wallet,auth],
   );
 
   return (

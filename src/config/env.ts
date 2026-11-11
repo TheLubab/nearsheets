@@ -13,6 +13,7 @@ export function readEnv(runtimeEnv: Record<string, string | number | boolean | u
       VITE_NEAR_NETWORK: z.enum(["mainnet", "testnet"]).default("testnet"),
       VITE_NEAR_RPC_URL: httpUrl.optional(),
       VITE_WALLET_MANIFEST_URL: httpUrl.optional(),
+      VITE_AUTH_API_URL: httpUrl.optional(),
       VITE_TREZU_API_URL: httpUrl.optional(),
       VITE_INTENTS_API_URL: httpUrl.optional(),
     },

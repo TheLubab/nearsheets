@@ -1,3 +1,4 @@
+import { executionSchema } from '../../table/execution';
 import { z } from "zod";
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import { isWorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
@@ -75,6 +76,9 @@ const envelopeSchema = z.object({
   }),
   treasury: treasurySchema,
   submissions: submissionsSchema,
+  executions: z.record(z.string(), executionSchema).superRefine((entries,ctx)=>{
+    for(const [key,record] of Object.entries(entries)) if(key!==record.id)ctx.addIssue({code:'custom',path:[key],message:'Execution identity does not match its journal key.'});
+  }),
   workbook: workbookSchema,
 });
 
@@ -117,7 +121,7 @@ export function validateDocument(
   if (format !== DOCUMENT_FORMAT) {
     return invalid(
       "not-a-trezu-document",
-      "This is not a Trezu Sheets document. Use Import to load a Trezu Sheets .json file.",
+      "This is not a NearSheets document. Use Import to load a NearSheets .json file.",
     );
   }
 
@@ -125,7 +129,7 @@ export function validateDocument(
   if (typeof version === "number" && Number.isInteger(version) && version > supportedVersion) {
     return invalid(
       "unsupported-future-version",
-      `This document uses format version ${version}, but this application supports up to version ${supportedVersion}. Update Trezu Sheets instead of importing it here.`,
+      `This document uses format version ${version}, but this application supports up to version ${supportedVersion}. Update NearSheets instead of importing it here.`,
     );
   }
 

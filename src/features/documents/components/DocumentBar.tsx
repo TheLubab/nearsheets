@@ -1,3 +1,8 @@
+import { Dialog } from '../../../components/ui/dialog';
+import * as Menubar from '@radix-ui/react-menubar';
+import type { ReactNode } from 'react';
+import { FolderOpen } from 'lucide-react';
+import { DocumentPicker } from './DocumentPicker';
 import { useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import type { DocumentWorkspace } from "../application/document-workspace";
@@ -8,6 +13,7 @@ import { downloadTextFile, importFileKind, readTextFile } from "../io/browser-fi
 interface DocumentBarProps {
   workspace: DocumentWorkspace;
   state: WorkspaceState;
+  children?:ReactNode;
 }
 
 function formatSavedAt(iso: string | null): string {
@@ -18,17 +24,19 @@ function formatSavedAt(iso: string | null): string {
   if (Number.isNaN(date.getTime())) {
     return "Not saved yet";
   }
-  return `Saved ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return `Saved locally · ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 /**
  * Document-level actions, deliberately separate from the sheet surface:
  * saving is automatic, while new/rename/export/import are explicit.
  */
-export function DocumentBar({ workspace, state }: DocumentBarProps) {
+export function DocumentBar({ workspace, state, children }: DocumentBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [pickerOpen,setPickerOpen]=useState(false);
+  const [aboutOpen,setAboutOpen]=useState(false);
   const document = state.document;
 
   const saveLabel =
@@ -84,7 +92,7 @@ export function DocumentBar({ workspace, state }: DocumentBarProps) {
     const kind = importFileKind(file.name);
     if (!kind) {
       workspace.reportError(
-        "Choose a Trezu Sheets .json document or a .csv file to import.",
+        "Choose a NearSheets .json document or a .csv file to import.",
       );
       return;
     }
@@ -103,8 +111,7 @@ export function DocumentBar({ workspace, state }: DocumentBarProps) {
     }
   };
 
-  return (
-    <div className="document-bar">
+  return <div className="document-context">
       <div className="document-bar__identity">
         {isRenaming ? (
           <form className="document-bar__rename" onSubmit={handleRename}>
@@ -137,6 +144,7 @@ export function DocumentBar({ workspace, state }: DocumentBarProps) {
             {document?.title ?? "Opening document…"}
           </button>
         )}
+        <button className="document-bar__open" type="button" aria-label="Open a saved workbook" title="Open a saved workbook" onClick={()=>setPickerOpen(true)}><FolderOpen size={16}/></button>
         <span
           className={`document-bar__save document-bar__save--${state.saveStatus}`}
           role="status"
@@ -147,49 +155,28 @@ export function DocumentBar({ workspace, state }: DocumentBarProps) {
         </span>
       </div>
 
-      <div className="document-bar__actions">
-        <button type="button" onClick={() => void workspace.createNewDocument()}>
-          New
-        </button>
-        <button type="button" onClick={handleImportClick}>
-          Import…
-        </button>
-        <button type="button" onClick={() => void handleExportJson()} disabled={!document}>
-          Export JSON
-        </button>
-        <button type="button" onClick={() => void handleExportCsv()} disabled={!document}>
-          Export CSV
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,.csv,application/json,text/csv"
-          className="document-bar__file"
-          onChange={(event) => void handleFileChosen(event)}
-        />
-      </div>
 
-      {state.notice ? (
-        <div
-          className={`document-bar__notice document-bar__notice--${state.notice.kind}`}
-          role={state.notice.kind === "error" ? "alert" : "status"}
-        >
-          <span>{state.notice.message}</span>
-          <button
-            type="button"
-            aria-label="Dismiss message"
-            onClick={() => workspace.dismissNotice()}
-          >
-            ×
-          </button>
-        </div>
-      ) : null}
-
-      {state.saveStatus === "error" && state.saveError ? (
-        <p className="document-bar__error" role="alert">
-          {state.saveError} Use Export JSON to keep a copy.
-        </p>
-      ) : null}
-    </div>
-  );
+    <Menubar.Root className="app-menubar">
+      <Menubar.Menu><Menubar.Trigger data-document-menu-trigger>File</Menubar.Trigger><Menubar.Portal><Menubar.Content className="menu-content" align="start" sideOffset={3}>
+        <Menubar.Item className="menu-item" onSelect={()=>void workspace.createNewDocument()}>New workbook</Menubar.Item>
+        <Menubar.Item className="menu-item" onSelect={()=>setPickerOpen(true)}>Open…</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>{setRenameValue(document?.title??'');setIsRenaming(true);}}>Rename</Menubar.Item>
+        <Menubar.Item className="menu-item" onSelect={handleImportClick}>Import…</Menubar.Item>
+        <Menubar.Separator className="menu-separator"/>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportJson()}>Download JSON workbook</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportCsv()}>Download current sheet as CSV</Menubar.Item>
+        <Menubar.Separator className="menu-separator"/>
+        <Menubar.Item className="menu-item" onSelect={()=>setAboutOpen(true)}>About NearSheets</Menubar.Item>
+      </Menubar.Content></Menubar.Portal></Menubar.Menu>
+      {children}
+    </Menubar.Root>
+    <input ref={fileInputRef} type="file" accept=".json,.csv,application/json,text/csv" className="document-bar__file" onChange={event=>void handleFileChosen(event)}/>
+    <Dialog open={aboutOpen} onOpenChange={setAboutOpen} title="About NearSheets" description="A spreadsheet interface for NEAR.">
+      <p>Workbooks are stored locally in your browser.</p>
+      <p>Solar icons by <a href="https://www.figma.com/community/file/1166831539721848736" target="_blank" rel="noreferrer">480 Design</a>, used under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. React components by <a href="https://solar-icons.dev" target="_blank" rel="noreferrer">Solar Icons</a>.</p>
+    </Dialog>
+    <DocumentPicker workspace={workspace} open={pickerOpen} onOpenChange={setPickerOpen}/>
+    {state.notice&&<div className={'document-bar__notice document-bar__notice--'+state.notice.kind} role={state.notice.kind==='error'?'alert':'status'}><span>{state.notice.message}</span><button aria-label="Dismiss message" onClick={()=>workspace.dismissNotice()}>×</button></div>}
+    {state.saveStatus==='error'&&state.saveError&&<p className="document-bar__error" role="alert">{state.saveError} Download JSON from File to keep a copy.</p>}
+  </div>;
 }

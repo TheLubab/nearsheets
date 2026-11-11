@@ -12,7 +12,7 @@ import {
 } from "@univerjs/engine-formula";
 
 /**
- * The Trezu Sheets custom-function catalog.
+ * The NearSheets custom-function catalog.
  *
  * Every function here is a pure calculation over its arguments. None of them
  * reads a network, signs, submits or mutates a document, so recalculation,
@@ -27,7 +27,7 @@ import {
 export { FUNCTION_CATALOG_VERSION } from "../model/function-catalog-version";
 
 /** Locale namespace used for function help text. */
-export const FUNCTION_LOCALE_NAMESPACE = "trezuFunction";
+export const FUNCTION_LOCALE_NAMESPACE = "nearsheetsFunction";
 
 type Primitive = string | number | boolean | null;
 
@@ -143,7 +143,7 @@ export function valueText(value: unknown): string {
 
 const catalog: CatalogEntry[] = [
   {
-    name: "TREZU_AMOUNT",
+    name: "NEAR_AMOUNT",
     summary: "Validates an amount against a token's precision.",
     description:
       "Returns the amount rounded to the token's precision, or #VALUE! when it cannot be a valid non-negative quantity at that precision. Extra digits that only reflect floating-point noise are accepted; meaningful extra precision is an error rather than a silent rounding. Submission re-parses the cell value with exact big-integer semantics.",
@@ -151,7 +151,7 @@ const catalog: CatalogEntry[] = [
       required("value", "Computed amount."),
       required("decimals", "Token precision, for example 24 for NEAR."),
     ],
-    example: "=TREZU_AMOUNT(C4, 24)",
+    example: "=NEAR_AMOUNT(C4, 24)",
     calculate: (value, decimals) => {
       const amount = toPrimitive(value);
       const precision = Number(toPrimitive(decimals));
@@ -171,12 +171,12 @@ const catalog: CatalogEntry[] = [
     },
   },
   {
-    name: "TREZU_ACCOUNT",
+    name: "NEAR_ACCOUNT",
     summary: "Checks that a cell looks like a NEAR account id.",
     description:
       "Returns the normalized account id, or #VALUE! when the text cannot be a NEAR account id. This is a syntactic check only: it does not prove the account exists or can receive funds.",
     parameters: [required("account", "Account id such as sara.near.")],
-    example: '=TREZU_ACCOUNT("sara.near")',
+    example: '=NEAR_ACCOUNT("sara.near")',
     calculate: (account) => {
       const text = valueText(account).trim();
       if (text.length === 0) {
@@ -195,7 +195,7 @@ const catalog: CatalogEntry[] = [
     },
   },
   {
-    name: "TREZU_REFERENCE",
+    name: "NS_REFERENCE",
     summary: "Builds a stable payment reference from a prefix and a number.",
     description:
       "Returns `prefix-number`, the value used as a payment row's stable identity. Use a reference instead of a row number so sorting or inserting rows never reassigns a payment to a different proposal.",
@@ -203,7 +203,7 @@ const catalog: CatalogEntry[] = [
       required("prefix", "Short project or invoice prefix."),
       required("number", "Sequence number."),
     ],
-    example: '=TREZU_REFERENCE("INV", 42)',
+    example: '=NS_REFERENCE("INV", 42)',
     calculate: (prefix, number) => {
       const head = valueText(prefix).trim();
       const tail = Number(toPrimitive(number));
@@ -214,7 +214,7 @@ const catalog: CatalogEntry[] = [
     },
   },
   {
-    name: "TREZU_DRAFT",
+    name: "NS_LEGACY_DRAFT",
     summary: "Derives the stable action draft id for a payment row.",
     description:
       "Returns the draft id derived from the action kind, network, treasury account and row reference. It never submits anything. Use it to confirm that a row has a stable identity; previewing and submitting are separate explicit actions.",
@@ -225,7 +225,7 @@ const catalog: CatalogEntry[] = [
       required("reference", "Stable row reference."),
     ],
     example:
-      '=TREZU_DRAFT("near-transfer", "testnet", "dao.sputnikv2.testnet", "INV-42")',
+      '=NS_LEGACY_DRAFT("near-transfer", "testnet", "dao.sputnikv2.testnet", "INV-42")',
     calculate: (kind, network, treasury, reference) => {
       const kindText = valueText(kind).trim();
       const networkText = valueText(network).trim();
@@ -245,7 +245,7 @@ const catalog: CatalogEntry[] = [
     },
   },
   {
-    name: "TREZU_SUM_REF",
+    name: "NS_SUM_REF",
     summary: "Sums rows that share a reference prefix.",
     description:
       "Adds the amounts whose reference starts with a prefix, so a payment can be checked across rows or sheets without depending on row positions. Non-numeric amounts contribute zero.",
@@ -254,7 +254,7 @@ const catalog: CatalogEntry[] = [
       required("referenceRange", "Reference column."),
       required("amountRange", "Amount column with the same shape."),
     ],
-    example: '=TREZU_SUM_REF("INV-", A4:A20, C4:C20)',
+    example: '=NS_SUM_REF("INV-", A4:A20, C4:C20)',
     calculate: (...args) => {
       const prefix = valueText(args[0]).trim();
       if (prefix.length === 0) {
@@ -278,12 +278,12 @@ const catalog: CatalogEntry[] = [
     },
   },
   {
-    name: "TREZU_MISSING",
+    name: "NS_MISSING",
     summary: "Counts blank fields in a payment row.",
     description:
       "Returns how many of the supplied fields are blank. Use it as a preview-readiness check before an explicit submission step; it never submits.",
     parameters: [repeated("field", "Values that must be present.")],
-    example: "=TREZU_MISSING(B4, C4, D4)",
+    example: "=NS_MISSING(B4, C4, D4)",
     calculate: (...fields) => {
       let missing = 0;
       for (const field of fields) {
@@ -402,7 +402,7 @@ export function createCustomFunctionCatalog(): CustomFunctionRegistration {
     (entry) => [createFunctionClass(entry), entry.name] as [CustomFunctionClass, string],
   );
 
-  const descriptions: IFunctionInfo[] = catalog.map((entry) => ({
+  const descriptions: IFunctionInfo[] = catalog.filter(entry => entry.name !== 'NS_LEGACY_DRAFT').map((entry) => ({
     functionName: entry.name,
     functionType: FunctionType.User,
     description: entry.description,
@@ -425,7 +425,7 @@ export function createCustomFunctionCatalog(): CustomFunctionRegistration {
 }
 
 /** Catalog function names, in registration order. */
-export const CUSTOM_FUNCTION_NAMES = catalog.map((entry) => entry.name);
+export const CUSTOM_FUNCTION_NAMES = catalog.filter(entry => entry.name !== "NS_LEGACY_DRAFT").map((entry) => entry.name);
 
 /**
  * Runs one catalog calculation by name without the engine.

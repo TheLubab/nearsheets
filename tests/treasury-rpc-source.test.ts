@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createNearRpcTreasurySource } from "../src/integrations/trezu/treasury-rpc-source";
-import type { NearViewClient } from "../src/integrations/trezu/treasury-rpc-source";
+import { createNearRpcTreasurySource } from "../src/integrations/sputnik/treasury-rpc-source";
+import type { NearViewClient } from "../src/integrations/sputnik/treasury-rpc-source";
 import { createTreasuryReader } from "../src/features/treasury/application/treasury-reader";
 
 const source = { label: "NEAR RPC" };

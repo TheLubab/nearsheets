@@ -4,12 +4,11 @@ import type {
 } from "./treasury-reader";
 import type { TreasuryReader } from "./treasury-reader";
 import { createTreasuryReader } from "./treasury-reader";
-import { createNearRpcTreasurySource } from "../../../integrations/trezu/treasury-rpc-source";
-import type { NearViewClient } from "../../../integrations/trezu/treasury-rpc-source";
+import { createNearRpcTreasurySource } from "../../../integrations/sputnik/treasury-rpc-source";
+import type { NearViewClient } from "../../../integrations/sputnik/treasury-rpc-source";
 import {
   createDemoTreasurySource,
-  isDemoTreasuryAccount,
-} from "../../../integrations/trezu/demo-treasury-source";
+} from "../../../integrations/sputnik/demo-treasury-source";
 import type { AppEnv } from "../../../config/env";
 
 /**
@@ -21,9 +20,7 @@ import type { AppEnv } from "../../../config/env";
  * turned into a reader. The UI reports that distinction instead of implying
  * the integration works.
  *
- * Demo data is available only in a development build and only for account ids
- * containing `demo`. It never silently replaces real reads: an account without
- * the marker still goes to RPC.
+ * Sample data requires explicit source selection. Account names never select it.
  */
 export interface CreateTreasuryReaderOptions {
   network: NearNetwork;
@@ -47,8 +44,8 @@ function routingSource(options: CreateTreasuryReaderOptions): TreasuryReadSource
   });
   const demo = options.allowDemo ? createDemoTreasurySource() : null;
 
-  const pick = (target: { accountId: string }): TreasuryReadSource => {
-    if (demo && isDemoTreasuryAccount(target.accountId)) {
+  const pick = (_target: { accountId: string }): TreasuryReadSource => {
+    if (demo) {
       return demo;
     }
     return rpc;
@@ -56,7 +53,7 @@ function routingSource(options: CreateTreasuryReaderOptions): TreasuryReadSource
 
   return {
     get label() {
-      return options.allowDemo ? `${rpc.label} (demo data for "demo" accounts)` : rpc.label;
+      return options.allowDemo ? `${rpc.label} (explicit sample source)` : rpc.label;
     },
     readPolicy: (target) => pick(target).readPolicy(target),
     readProposals: (target, page) => pick(target).readProposals(target, page),
@@ -135,9 +132,9 @@ export function describeIntegrations(
     {
       key: "intents-api",
       label: "NEAR Intents API",
-      state: config.VITE_INTENTS_API_URL ? "configured-no-adapter" : "not-configured",
+      state: config.VITE_INTENTS_API_URL ? "available" : "not-configured",
       detail: config.VITE_INTENTS_API_URL
-        ? "URL configured, but no adapter is implemented, so it is not used."
+        ? "1Click estimation, explicit route preparation and status adapter configured."
         : "Not configured.",
     },
   );

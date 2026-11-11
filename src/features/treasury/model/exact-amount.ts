@@ -24,11 +24,10 @@ export const MAX_TOKEN_DECIMALS = 24;
 export const NEAR_DECIMALS = 24;
 
 /**
- * Relative tolerance for binary floating-point noise. `1e-9` of the value is
- * far below any spreadsheet's displayed precision but far above double noise
- * (about `2^-52`).
+ * A tight tolerance applies only to numeric spreadsheet results. Exact strings
+ * never use noise tolerance. Any accepted numeric adjustment reports rounded.
  */
-const FLOAT_NOISE_FACTOR = new Decimal("1e-9");
+const FLOAT_NOISE_FACTOR = new Decimal(String(Number.EPSILON * 2));
 
 /** Refuse absurd magnitudes instead of producing unbounded integer strings. */
 const MAX_ABSOLUTE = new Decimal("1e30");
@@ -147,13 +146,14 @@ export function parseExactAmount(
       rounded = true;
     } else {
       const noise = Decimal.max(1, value.abs()).times(FLOAT_NOISE_FACTOR);
-      if (value.minus(candidate).abs().lessThanOrEqualTo(noise)) {
+      if (typeof raw === "number" && !candidate.isZero() && value.minus(candidate).abs().lessThanOrEqualTo(noise)) {
         // Binary floating-point noise, not a meaningful extra digit.
         exact = candidate;
+        rounded = true;
       } else {
         return fail(
           "over-precision",
-          `Amount has more than ${decimals} decimal place${decimals === 1 ? "" : "s"}. Round it explicitly with TREZU_AMOUNT.`,
+          `Amount has more than ${decimals} decimal place${decimals === 1 ? "" : "s"}. Round it explicitly before preparing an action.`,
         );
       }
     }

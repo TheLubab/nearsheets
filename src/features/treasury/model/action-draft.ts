@@ -241,16 +241,14 @@ export function draftFromRow(
   }
 
   const isNativeNear = assetId === NATIVE_NEAR_ASSET;
+  // Compatibility builder for old native journals only. New token operations
+  // resolve metadata through the shared table runtime, never a Decimals cell.
+  if (!isNativeNear) {
+    return {draft:null,issues:[...issues,{field:'asset',message:'Use a table action function with verified token metadata. Legacy asset rows cannot authorize token or Intents transfers.'}]};
+  }
   let decimals: number | null = null;
   if (decimalsInput === undefined || decimalsInput === null || decimalsInput === "") {
-    if (isNativeNear) {
-      decimals = NEAR_DECIMALS;
-    } else if (assetId.length > 0) {
-      issues.push({
-        field: "decimals",
-        message: `Row ${row.rowNumber}: token precision is required for ${assetId}; it is not guessed.`,
-      });
-    }
+    decimals = NEAR_DECIMALS;
   } else {
     const parsed = Number(decimalsInput);
     if (Number.isInteger(parsed) && parsed >= 0) {
@@ -263,6 +261,10 @@ export function draftFromRow(
     }
   }
 
+  if (isNativeNear && decimals !== NEAR_DECIMALS) {
+    issues.push({field: "decimals", message: "Native NEAR precision is fixed at 24 decimals."});
+    decimals = NEAR_DECIMALS;
+  }
   const amountResult = parseExactAmount(row.amount, decimals ?? -1);
   if (decimals !== null && !amountResult.ok) {
     issues.push({

@@ -49,7 +49,9 @@ export interface WalletController {
   getState(): WalletState;
   subscribe(listener: () => void): Unsubscribe;
   connect(): Promise<void>;
+  restore(): Promise<void>;
   disconnect(): Promise<void>;
+  authorize(payload:string): Promise<{accountId:string;authorization:string}>;
   setNetwork(network: NearNetwork): Promise<void>;
   /**
    * Signs and sends one transaction through the connected session.
@@ -77,10 +79,12 @@ export function createWalletController(
     cancelled: false,
   };
   let disposed = false;
+  let connectionGeneration = 0;
   let detachSignOut: (() => void) | null = null;
   const listeners = new Set<() => void>();
 
   const publish = (partial: Partial<WalletState>) => {
+    if(disposed)return;
     state = { ...state, ...partial };
     for (const listener of listeners) {
       listener();
@@ -105,15 +109,16 @@ export function createWalletController(
     if (disposed || state.status === "connecting" || state.status === "connected") {
       return;
     }
+    const request = ++connectionGeneration;
     publish({ status: "connecting", error: null, cancelled: false });
     try {
       const connection = await gateway.connect();
-      if (disposed) {
+      if (disposed || request !== connectionGeneration) {
         return;
       }
       publish({ status: "connected", connection, error: null });
     } catch (cause) {
-      if (disposed) {
+      if (disposed || request !== connectionGeneration) {
         return;
       }
       if (cause instanceof WalletCancelledError) {
@@ -139,6 +144,7 @@ export function createWalletController(
   };
 
   const disconnect = async (): Promise<void> => {
+    ++connectionGeneration;
     if (disposed || state.status === "disconnected") {
       return;
     }
@@ -195,7 +201,19 @@ export function createWalletController(
       };
     },
     connect,
+    restore: async () => {
+      if (disposed || !gateway.restore || state.status !== 'disconnected') return;
+      const request = ++connectionGeneration;
+      try {
+        const connection = await gateway.restore();
+        if (!disposed && request === connectionGeneration && connection) publish({connection,status:'connected',error:null});
+      } catch { /* A missing wallet session leaves local editing available. */ }
+    },
     disconnect,
+    authorize: async (payload) => {
+      if (disposed || state.status !== 'connected' || !gateway.authorize) throw new Error('Connect an authorization-capable wallet first.');
+      return gateway.authorize(payload);
+    },
     setNetwork,
     signAndSendTransaction: async (transaction) => {
       if (disposed || state.status !== "connected" || !state.connection) {
@@ -213,6 +231,7 @@ export function createWalletController(
         return;
       }
       disposed = true;
+      ++connectionGeneration;
       detachSignOut?.();
       detachSignOut = null;
       gateway.dispose();

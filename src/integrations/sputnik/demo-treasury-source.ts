@@ -103,13 +103,7 @@ function demoProposals(): unknown[] {
 }
 
 export function createDemoTreasurySource(): TreasuryReadSource {
-  const requireDemo = (target: TreasuryTarget) => {
-    if (!isDemoTreasuryAccount(target.accountId)) {
-      throw new Error(
-        `Demo data is only available for accounts containing "demo", not ${target.accountId}.`,
-      );
-    }
-  };
+  const requireDemo = (_target: TreasuryTarget) => {};
 
   const proposals = demoProposals();
 

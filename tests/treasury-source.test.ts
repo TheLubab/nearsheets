@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createDemoTreasurySource,
   isDemoTreasuryAccount,
-} from "../src/integrations/trezu/demo-treasury-source";
+} from "../src/integrations/sputnik/demo-treasury-source";
 import { createTreasuryReader } from "../src/features/treasury/application/treasury-reader";
 import {
   createTreasuryReaderForNetwork,
   describeIntegrations,
 } from "../src/features/treasury/application/treasury-source";
 import { readEnv } from "../src/config/env";
-import type { NearViewClient } from "../src/integrations/trezu/treasury-rpc-source";
+import type { NearViewClient } from "../src/integrations/sputnik/treasury-rpc-source";
 
 /**
  * The read path with demo data.
@@ -43,10 +43,10 @@ describe("demo treasury source", () => {
     expect(balances[1]?.display).toBe("2450");
   });
 
-  it("refuses accounts without the demo marker", async () => {
+  it("uses sample data only because the sample source was explicitly selected", async () => {
     await expect(
       reader.readPolicy({ network: "testnet", accountId: "real-dao.testnet" }),
-    ).rejects.toThrow(/Demo data is only available/);
+    ).resolves.toHaveProperty("roles");
   });
 
   it("identifies demo accounts by a visible marker", () => {
@@ -83,7 +83,7 @@ describe("routing between demo and real reads", () => {
     };
   }
 
-  it("uses demo data only for demo accounts and RPC for the rest", async () => {
+  it("uses explicitly selected sample source for every account", async () => {
     const calls: string[] = [];
     const reader = createTreasuryReaderForNetwork({
       network: "testnet",
@@ -99,7 +99,7 @@ describe("routing between demo and real reads", () => {
     expect(calls).toEqual([]);
 
     await reader.readProposals({ network: "testnet", accountId: "real.testnet" });
-    expect(calls).toEqual(["real.testnet", "real.testnet"]);
+    expect(calls).toEqual([]);
   });
 
   it("never serves demo data when it is not enabled", async () => {
@@ -128,7 +128,7 @@ describe("integration readiness reporting", () => {
 
     expect(byKey["near-rpc"]?.state).toBe("available");
     expect(byKey["trezu-api"]?.state).toBe("configured-no-adapter");
-    expect(byKey["intents-api"]?.state).toBe("configured-no-adapter");
+    expect(byKey["intents-api"]?.state).toBe("available");
   });
 
   it("keeps an unconfigured integration unavailable", () => {
@@ -163,7 +163,7 @@ describe("integration readiness reporting", () => {
     });
     expect(fetchSpy).not.toHaveBeenCalled();
     // Constructing a reader also does not query.
-    expect(reader.sourceLabel).toContain("demo");
+    expect(reader.sourceLabel).toContain("sample");
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });

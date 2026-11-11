@@ -30,9 +30,13 @@ const connectorRef: { current: FakeConnector | null } = { current: null };
 const behavior: {
   connect: () => Promise<void>;
   accounts: () => Promise<FakeAccount[]>;
+  sign: () => Promise<unknown>;
+  authorize: (input:unknown) => Promise<{accountId:string;authorization:string}>;
 } = {
   connect: async () => undefined,
   accounts: async () => [{ accountId: "alice.near", publicKey: "ed25519:key" }],
+  sign:async()=>({}),
+  authorize:async()=>({accountId:'alice.near',authorization:'blob'}),
 };
 
 vi.mock("@hot-labs/near-connect", () => ({
@@ -67,6 +71,8 @@ vi.mock("@hot-labs/near-connect", () => ({
       return {
         manifest: { id: "meteor", name: "Meteor Wallet" },
         getAccounts: behavior.accounts,
+        signAndSendTransaction:behavior.sign,
+        resolveAuth:behavior.authorize,
       };
     }
   },
@@ -75,8 +81,21 @@ vi.mock("@hot-labs/near-connect", () => ({
 const config = readEnv({ VITE_NEAR_NETWORK: "testnet" });
 
 describe("connector wallet gateway", () => {
+  it('uses NearSheets ownership authorization and does not classify transport cancellation as user refusal',async()=>{
+    const authorize=vi.fn(async()=>({accountId:'alice.near',authorization:'NEP-641'}));
+    behavior.authorize=authorize;
+    behavior.sign=async()=>{throw new Error('RPC request cancelled after broadcast');};
+    const gateway=createConnectorWalletGateway({network:'testnet',config});await gateway.connect();
+    await expect(gateway.authorize!('server-payload')).resolves.toEqual({accountId:'alice.near',authorization:'NEP-641'});
+    expect(authorize).toHaveBeenCalledWith({network:'testnet',purpose:'PROVE_OWNERSHIP',recipient:'NearSheets',payload:'server-payload'});
+    try { await gateway.signAndSendTransaction({receiverId:'dao.testnet',actions:[]});throw new Error('Expected failure'); }
+    catch(cause){expect(cause).not.toBeInstanceOf(WalletCancelledError);expect(String(cause)).toContain('after broadcast');}
+    gateway.dispose();
+  });
   beforeEach(() => {
     connectorRef.current = null;
+    behavior.sign=async()=>({});
+    behavior.authorize=async()=>({accountId:"alice.near",authorization:"blob"});
     behavior.connect = async () => undefined;
     behavior.accounts = async () => [
       { accountId: "alice.near", publicKey: "ed25519:key" },

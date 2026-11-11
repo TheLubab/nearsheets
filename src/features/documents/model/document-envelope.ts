@@ -1,3 +1,4 @@
+import type { ExecutionJournal } from '../../table/execution';
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
 
@@ -6,7 +7,7 @@ import type { SubmissionRecord } from "../../treasury/model/proposal-submissions
  * unrelated JSON (for example a raw Univer snapshot) with a clear message
  * instead of half-loading it.
  */
-export const DOCUMENT_FORMAT = "trezu-sheets";
+export const DOCUMENT_FORMAT = "nearsheets";
 
 /**
  * Current envelope schema version.
@@ -14,7 +15,7 @@ export const DOCUMENT_FORMAT = "trezu-sheets";
  * Bump this whenever the envelope shape changes and register a migration in
  * `migrations.ts`. Never change the meaning of an existing field in place.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Version of the custom-function catalog the workbook was calculated with.
@@ -46,7 +47,7 @@ export interface DocumentFunctionMetadata {
 }
 
 /**
- * A Trezu Sheets document: application metadata plus a lossless Univer
+ * A NearSheets document: application metadata plus a lossless Univer
  * workbook snapshot.
  *
  * Identities are explicit. The document has a stable id independent of its
@@ -73,6 +74,7 @@ export interface DocumentEnvelope {
    * about actions taken, not workbook content.
    */
   submissions: Record<string, SubmissionRecord>;
+  executions: ExecutionJournal;
   workbook: WorkbookSnapshot;
 }
 
@@ -101,6 +103,7 @@ export function createDocumentEnvelope(
     customFunctions: { catalogVersion: FUNCTION_CATALOG_VERSION },
     treasury: { ...options.treasury },
     submissions: {},
+    executions: {},
     workbook: options.workbook,
   };
 }
@@ -203,7 +206,7 @@ export function createBlankDocument(
   options: { title?: string; documentId?: string; now?: Date } = {},
 ): DocumentEnvelope {
   return createDocumentEnvelope({
-    title: options.title ?? "Untitled budget",
+    title: options.title ?? "Untitled workbook",
     workbook,
     treasury,
     documentId: options.documentId,
