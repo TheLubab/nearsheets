@@ -591,6 +591,19 @@ body { background: var(--background); color: var(--foreground); }
 .welcome-dialog__media { position: relative; margin: 0; overflow: hidden; background: var(--accent-soft); }
 /* Absolute fill keeps the photo from contributing intrinsic height to the grid row. */
 .welcome-dialog__media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 60%; }
+/* A quiet photographer credit: a small translucent pill over the bottom-right of the photo. */
+.welcome-dialog__credit {
+  position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px);
+  padding: 4px 12px; border-radius: 9999px;
+  background: #00000047; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  color: #fff; font-size: 10px; line-height: 1.5; letter-spacing: .01em;
+  text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: .9; transition: background .15s, opacity .15s;
+}
+.welcome-dialog__credit:hover { background: #000000a6; color: #fff; opacity: 1; text-decoration: none; }
+.welcome-dialog__credit:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.welcome-dialog .welcome-dialog__credit { color: #fff; }
+.welcome-dialog .welcome-dialog__credit:hover { color: #fff; }
 .welcome-dialog__body { min-width: 0; padding: 32px; overflow: auto; display: flex; flex-direction: column; justify-content: center; }
 .welcome-dialog__title { margin: 0 0 8px; font-size: 19px; letter-spacing: -.35px; line-height: 1.25; }
 .welcome-dialog__description { margin: 0 0 22px; color: var(--muted-foreground); font-size: 13px; line-height: 1.55; }

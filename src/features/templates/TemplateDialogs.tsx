@@ -89,6 +89,9 @@ export function WelcomeDialog({ workspace, open, onCreated, onUseTemplate }: {
   return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onCreated(); } }} className="welcome-dialog" withClose={!creating}>
     <div className="welcome-dialog__media">
       <img src={`${import.meta.env.BASE_URL}lavender-field.jpg`} alt="" width={1068} height={778} decoding="async"/>
+      <a className="welcome-dialog__credit" href="https://unsplash.com/photos/close-up-photo-of-lavender-SavQfLRm4Do" target="_blank" rel="noopener noreferrer">
+        Photo by Alexander Grey
+      </a>
     </div>
     <div className="welcome-dialog__body">
       <DialogPrimitive.Title className="welcome-dialog__title">Welcome to NearSheets</DialogPrimitive.Title>
