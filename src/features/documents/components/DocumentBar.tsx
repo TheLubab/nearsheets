@@ -1,5 +1,6 @@
 import { Dialog } from '../../../components/ui/dialog';
 import * as Menubar from '@radix-ui/react-menubar';
+import { Tooltip } from '@univerjs/design';
 import type { ReactNode } from 'react';
 import { FolderOpenIcon } from '@solar-icons/react/linear/folder-open';
 import { AddSquareIcon } from '@solar-icons/react/linear/add-square';
@@ -10,7 +11,7 @@ import { PenIcon } from '@solar-icons/react/linear/pen';
 import { InfoCircleIcon } from '@solar-icons/react/linear/info-circle';
 import { DocumentPicker } from './DocumentPicker';
 import { useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent } from "react";
 import type { DocumentWorkspace } from "../application/document-workspace";
 import type { WorkspaceState } from "../application/document-workspace";
 import { documentFileName } from "../interchange/json";
@@ -33,7 +34,7 @@ function formatSavedAt(iso: string | null): string {
   if (Number.isNaN(date.getTime())) {
     return "Not saved yet";
   }
-  return `Saved locally · ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return `Saved in this browser at ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 /**
@@ -55,14 +56,11 @@ export function DocumentBar({ workspace, state, children, ribbonMenu, onTemplate
         ? "Save failed"
         : formatSavedAt(state.savedAt);
 
-  const handleRename = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleRename = () => {
     const title = renameValue.trim();
-    if (title.length === 0) {
-      // renameDocument rejects empty titles; keep the form open to correct it.
-      return;
+    if (title && title !== document?.title) {
+      void workspace.rename(title);
     }
-    await workspace.rename(title);
     setIsRenaming(false);
   };
 
@@ -123,27 +121,27 @@ export function DocumentBar({ workspace, state, children, ribbonMenu, onTemplate
   return <div className="document-context">
       <div className="document-bar__identity">
         {isRenaming ? (
-          <form className="document-bar__rename" onSubmit={handleRename}>
+          <div className="document-bar__rename">
             <input
               autoFocus
               aria-label="Document title"
               value={renameValue}
+              size={Math.max(8, Math.min(32, renameValue.length || 1))}
               onChange={(event) => setRenameValue(event.target.value)}
-              onBlur={(event) => {
-                // Clicking Save blurs the input first; let the submit win.
-                if (event.currentTarget.form?.contains(event.relatedTarget as Node | null)) {
-                  return;
+              onBlur={handleRename}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
                 }
-                setIsRenaming(false);
               }}
             />
-            <button type="submit">Save</button>
-          </form>
+          </div>
         ) : (
+          <Tooltip title="Rename" asChild>
           <button
             type="button"
             className="document-bar__title"
-            title="Rename this document"
             onClick={() => {
               setRenameValue(document?.title ?? "");
               setIsRenaming(true);
@@ -152,8 +150,8 @@ export function DocumentBar({ workspace, state, children, ribbonMenu, onTemplate
           >
             {document?.title ?? "Opening document…"}
           </button>
+          </Tooltip>
         )}
-        <button className="document-bar__open" type="button" aria-label="Open a saved nearsheet" title="Open a saved nearsheet" onClick={()=>setPickerOpen(true)}><FolderOpenIcon size={16}/></button>
         <span
           className={`document-bar__save document-bar__save--${state.saveStatus}`}
           role="status"

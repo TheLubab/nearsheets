@@ -23,21 +23,21 @@ function cell(s: Sheet, row: number, column: number, value: string | number, inp
   const data: ICellData = typeof value === 'string' && value.startsWith('=')
     ? { f: value }
     : { v: value, t: typeof value === 'string' ? CellValueType.STRING : CellValueType.NUMBER };
-  if (input) data.s = { bg: { rgb: '#FFF2CC' }, n: { pattern: '@' } };
+  if (input) data.s = { bg: { rgb: '#F4F6D8' }, n: { pattern: '@' } };
   s.cellData![row - 1] ??= {};
   s.cellData![row - 1]![column - 1] = data;
 }
 function line(s: Sheet, row: number, text: string, heading = false) {
   cell(s, row, 1, text);
   s.cellData![row - 1]![0]!.s = heading
-    ? { bl: 1, fs: 13, bg: { rgb: '#DDEDE3' }, cl: { rgb: '#235B45' } }
-    : { cl: { rgb: '#45534B' } };
+    ? { bl: 1, fs: 13, bg: { rgb: '#E6DCF9' }, cl: { rgb: '#40549C' } }
+    : { cl: { rgb: '#626078' } };
   s.mergeData!.push({ startRow: row - 1, endRow: row - 1, startColumn: 0, endColumn: 6 });
 }
 function headers(s: Sheet, row: number, labels: string[]) {
   labels.forEach((label, i) => {
     cell(s, row, i + 1, label);
-    s.cellData![row - 1]![i]!.s = { bl: 1, bg: { rgb: '#DDEDE3' } };
+    s.cellData![row - 1]![i]!.s = { bl: 1, bg: { rgb: '#E6DCF9' } };
   });
 }
 function input(s: Sheet, row: number, label: string, value = '') {

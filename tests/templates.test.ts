@@ -133,7 +133,7 @@ describe('template workbooks', () => {
       expect(second.sheet.getRange('E10').getFormula()).toContain('SPUTNIK_TRANSFER(A10,$B$3,B10,C10,D10,$B$4)');
       const saved = second.book.save();
       const amount = saved.sheets[saved.sheetOrder[0]!]!.cellData![9]![2]!;
-      expect(typeof amount.s === 'string' ? saved.styles[amount.s] : amount.s).toMatchObject({ n: { pattern: '@' }, bg: { rgb: '#FFF2CC' } });
+      expect(typeof amount.s === 'string' ? saved.styles[amount.s] : amount.s).toMatchObject({ n: { pattern: '@' }, bg: { rgb: '#F4F6D8' } });
       expect(second.view).not.toHaveBeenCalled();
     } finally { second.dispose(); }
   });

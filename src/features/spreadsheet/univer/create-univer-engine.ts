@@ -76,8 +76,24 @@ export function createUniverEngine(
   const tableFunctions=createTableFunctionCatalog(runtime,readFormula);
   const helperFunctions=withHelperDiagnostics(customFunctions.functions,runtime,readFormula);
   const tableDescriptions=TABLE_FUNCTIONS.map(([name,parameters,example])=>({functionName:name,functionType:FunctionType.User,description:name+'('+parameters+')',abstract:'Example: '+example,functionParameter:parameters.split(',').map(parameter=>({name:parameter.trim(),detail:parameter.trim(),example:'',require:BooleanNumber.TRUE,repeat:BooleanNumber.FALSE}))}));
+  // Univer paints selection borders on canvas, so resolve the CSS color at startup.
+  const selectionColor = getComputedStyle(mountElement).getPropertyValue('--selection-color').trim() || '#4B63B6';
   const { univer, univerAPI } = createUniver({
-    theme:{...defaultTheme,gray:{...defaultTheme.gray,50:'#edf3ef'},primary:{50:'#fafafa',100:'#f4f4f5',200:'#e4e4e7',300:'#d4d4d8',400:'#a1a1aa',500:'#71717a',600:'#52525b',700:'#3f3f46',800:'#27272a',900:'#18181b'}},
+    // Univer 1.4 uses primary.600 for selections and gray.0 for UI surfaces.
+    // Keep its semantic error colors and workbook-defined cell styles intact.
+    theme: {
+      ...defaultTheme,
+      gray: {
+        0: '#FFFFFF', 50: '#FAFAFA', 100: '#EAE9E6', 200: '#EAEAEA',
+        300: '#BAB8B3', 400: '#8B8984', 500: '#6B6965', 600: '#565550',
+        700: '#3F3E3A', 800: '#302F2C', 900: '#242424', 1000: '#171715',
+      },
+      primary: {
+        50: '#F5F4F2', 100: '#EAE9E6', 200: '#D6D4D0', 300: '#BAB8B3',
+        400: '#8B8984', 500: '#74726D', 600: selectionColor,
+        700: '#3F3E3A', 800: '#302F2C', 900: '#242320',
+      },
+    },
     locale: LocaleType.EN_US,
     locales: {
       [LocaleType.EN_US]: mergeLocales(

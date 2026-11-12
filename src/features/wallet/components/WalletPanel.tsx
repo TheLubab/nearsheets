@@ -1,5 +1,7 @@
 import { WalletIcon } from "@solar-icons/react/linear/wallet";
 import { AltArrowDownIcon } from "@solar-icons/react/linear/alt-arrow-down";
+import { useState } from "react";
+import { Tooltip } from "@univerjs/design";
 import { flushSync } from "react-dom";
 import { NEAR_NETWORKS, type NearNetwork } from "../../../integrations/near/network";
 import type { WalletState, WalletController } from "../application/wallet-controller";
@@ -15,16 +17,18 @@ function networkLabel(network: NearNetwork): string {
 
 export function WalletPanel({ wallet, state }: WalletPanelProps) {
   const { status, connection, error, cancelled, network } = state;
+  const [failedIcon, setFailedIcon] = useState<string | null>(null);
   const busy = status === "connecting" || status === "disconnecting";
 
   return (
     <section className="wallet-panel" aria-label="Wallet">
       <div className="wallet-panel__settings">
-        {connection ? <p>Changing networks disconnects your wallet.</p> : null}
         <span className="wallet-panel__network-control">
+          <Tooltip title={connection ? "Changing networks disconnects your wallet." : undefined} className="wallet-network-tooltip" asChild>
           <select id="wallet-network" aria-label="Network" value={network} disabled={busy} onChange={(event) => void wallet.setNetwork(event.target.value as NearNetwork)}>
             {NEAR_NETWORKS.map((value) => <option key={value} value={value}>{networkLabel(value)}</option>)}
           </select>
+          </Tooltip>
           <AltArrowDownIcon size={14} aria-hidden="true"/>
         </span>
       </div>
@@ -32,7 +36,7 @@ export function WalletPanel({ wallet, state }: WalletPanelProps) {
       {connection ? (
         <div className="wallet-panel__identity">
           <div className="wallet-panel__identity-heading">
-            <span className="wallet-panel__icon" aria-hidden="true"><WalletIcon size={21}/></span>
+            <span className="wallet-panel__icon" aria-hidden="true">{connection.walletIcon && connection.walletIcon !== failedIcon ? <img src={connection.walletIcon} alt="" onError={() => setFailedIcon(connection.walletIcon ?? null)} /> : <WalletIcon size={21}/>}</span>
             <span className="wallet-panel__connected"><span aria-hidden="true"/>Connected</span>
           </div>
           <span className="wallet-panel__account" title={connection.accountId}>{connection.accountId}</span>

@@ -27,6 +27,7 @@ export interface WalletConnection {
   publicKey: string | null;
   walletId: string;
   walletName: string;
+  walletIcon?: string;
 }
 
 /**
@@ -150,7 +151,7 @@ export function createConnectorWalletGateway(
         if (!account) return null;
         connector = active;
         wallet = restored.wallet;
-        return {accountId:account.accountId,publicKey:account.publicKey ?? null,walletId:wallet.manifest.id,walletName:wallet.manifest.name};
+        return {accountId:account.accountId,publicKey:account.publicKey ?? null,walletId:wallet.manifest.id,walletName:wallet.manifest.name,walletIcon:wallet.manifest.icon};
       } catch { return null; }
     },
 
@@ -171,6 +172,7 @@ export function createConnectorWalletGateway(
           publicKey: account.publicKey ?? null,
           walletId: connected.manifest.id,
           walletName: connected.manifest.name,
+          walletIcon: connected.manifest.icon,
         };
       } catch (cause) {
         throw asWalletError(cause);

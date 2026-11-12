@@ -75,7 +75,7 @@ vi.mock("@hot-labs/near-connect", () => ({
       this.connectInput = input;
       await behavior.connect();
       return {
-        manifest: { id: "meteor", name: "Meteor Wallet" },
+        manifest: { id: "meteor", name: "Meteor Wallet", icon: "https://example.com/meteor.png" },
         getAccounts: behavior.accounts,
         signAndSendTransaction:behavior.sign,
         resolveAuth:behavior.authorize,
@@ -116,6 +116,7 @@ describe("connector wallet gateway", () => {
       publicKey: "ed25519:key",
       walletId: "meteor",
       walletName: "Meteor Wallet",
+      walletIcon: "https://example.com/meteor.png",
     });
     expect(connectorRef.current?.network).toBe("testnet");
     expect(connectorRef.current?.excludedWallets).toEqual(expect.arrayContaining(["ledger", "ethereum-wallets", "wallet-connect", "passkey", "trezu-wallet"]));
