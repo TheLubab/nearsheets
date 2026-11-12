@@ -17,7 +17,7 @@ const hostOf = (url: string) => { try { return new URL(url).host; } catch { retu
 const RPC_HOST = hostOf(env.VITE_NEAR_RPC_URL ?? defaultRpcUrl(env.VITE_NEAR_NETWORK));
 const INTENTS_HOST = env.VITE_INTENTS_API_URL ? hostOf(env.VITE_INTENTS_API_URL) : 'Disabled';
 
-export function HelpMenu() {
+export function HelpMenu({ onGettingStarted, onInterfaceTour, onBlockchainTour }: { onGettingStarted?(): void; onInterfaceTour?(): void; onBlockchainTour?(): void }) {
   return <Menubar.Root className="header-menu">
     <Menubar.Menu>
       <Menubar.Trigger className="header-menu__trigger" aria-label="Help and feedback" title="Help and feedback">
@@ -25,6 +25,10 @@ export function HelpMenu() {
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className="menu-content help-menu__content" align="end" sideOffset={6}>
+          {onGettingStarted ? <Menubar.Item className="menu-item" onSelect={onGettingStarted}>Getting started</Menubar.Item> : null}
+          {onInterfaceTour ? <Menubar.Item className="menu-item" onSelect={onInterfaceTour}>Tour the interface</Menubar.Item> : null}
+          {onBlockchainTour ? <Menubar.Item className="menu-item" onSelect={onBlockchainTour}>Tour Blockchain tools</Menubar.Item> : null}
+          {onGettingStarted ? <Menubar.Separator className="menu-separator"/> : null}
           {HELP_LINKS.map(({ label, href, icon: Icon }) => <Menubar.Item key={label} className="menu-item menu-item--link" asChild>
             <a href={href} target="_blank" rel="noreferrer"><Icon size={16} aria-hidden="true"/>{label}</a>
           </Menubar.Item>)}

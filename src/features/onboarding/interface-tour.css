@@ -1,0 +1,24 @@
+.driver-popover.nearsheets-guide {
+  font-family: 'Inter Variable', 'Segoe UI', sans-serif;
+  color: var(--foreground);
+  background: var(--app-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px #0003;
+  padding: 20px;
+  width: min(310px, calc(100vw - 32px));
+  min-width: 0;
+  max-width: 310px;
+}
+.nearsheets-guide .driver-popover-description { color: var(--foreground); font-size: 13px; line-height: 1.6; padding-right: 14px; }
+.nearsheets-guide .driver-popover-footer { gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.nearsheets-guide .driver-popover-progress-text { color: var(--muted-foreground); font-size: 11px; white-space: nowrap; }
+.nearsheets-guide .driver-popover-navigation-btns { gap: 6px; flex-wrap: wrap; }
+.nearsheets-guide .driver-popover-footer-btn { border-radius: 6px; padding: 7px 10px; font-size: 12px; font-weight: 500; border-color: var(--border); text-shadow: none; }
+.nearsheets-guide .driver-popover-next-btn { color: var(--primary-foreground); background: var(--primary); border-color: var(--primary); }
+.nearsheets-guide .driver-popover-next-btn:hover { background: var(--primary-hover); }
+.nearsheets-guide .driver-popover-close-btn { top: 10px; right: 10px; color: var(--muted-foreground); border-radius: 4px; }
+.nearsheets-guide button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .driver-active .driver-overlay, .driver-active .driver-popover { animation: none; transition: none; }
+}

@@ -1,5 +1,7 @@
 import { FUNCTION_REGISTRY } from '../../table/function-registry';
 import { registerBlockchainRibbon } from './blockchain-ribbon';
+import { registerBlockchainTour } from '../../onboarding/blockchain-tour';
+import { toast } from '../../../components/ui/toast';
 import { registerCalculationFeedback } from './calculation-feedback';
 import { registerBalanceFormatting } from './balance-format';
 import { moveViewControlsToFooter } from './footer-view-controls';
@@ -14,7 +16,7 @@ import type { IDisposable, IWorkbookData, Univer } from "@univerjs/core";
 import { LocaleType, createUniver, mergeLocales, defaultTheme } from "@univerjs/presets";
 import { BooleanNumber, IResourceManagerService } from '@univerjs/core';
 import { FunctionType } from '@univerjs/engine-formula';
-import { UniverSheetsCorePreset, CellAlertManagerService, IEditorBridgeService } from "@univerjs/preset-sheets-core";
+import { UniverSheetsCorePreset, CellAlertManagerService, IEditorBridgeService, IRibbonService } from "@univerjs/preset-sheets-core";
 import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
 import {
   createCustomFunctionCatalog,
@@ -137,6 +139,7 @@ export function createUniverEngine(
   registrations.push(registerBalanceFormatting(univerAPI, univer.__getInjector().get(IResourceManagerService), options.initialWorkbook));
   registrations.push(registerCalculationFeedback(univer,runtime));
   registrations.push(registerBlockchainRibbon(univer,univerAPI));
+  registrations.push(registerBlockchainTour({ root: mountElement, ribbon: univer.__getInjector().get(IRibbonService), onError: message => toast.error(message) }));
   moveViewControlsToFooter(univer);
 
   let disposed = false;

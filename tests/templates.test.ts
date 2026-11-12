@@ -45,6 +45,7 @@ function engine(id: TemplateId, snapshot?: WorkbookSnapshot, publicDefaults=fals
   const initial=snapshot??getWorkbookTemplate(id).createWorkbook();
   if(!snapshot&&!publicDefaults)for(const data of Object.values(initial.sheets)){
     const reset=(r:number,c:number,v:string)=>{data.cellData![r-1]![c-1]={v,t:1};};
+    if(data.name==='Start here'){reset(6,1,'');reset(7,1,'');reset(8,1,'');}
     if(data.name==='Funding')reset(4,2,'');
     if(data.name==='Balances'){reset(4,2,'testnet');reset(5,2,'');reset(6,2,'');for(let r=8;r<=10;r++)reset(r,1,'');}
     if(data.name==='Treasury'){reset(4,2,'');reset(5,2,'testnet');}
@@ -84,15 +85,60 @@ describe('template workbooks', () => {
   it.each(WORKBOOK_TEMPLATES)('$name calculates fresh guards without contacting services', async template => {
     const f = engine(template.id);
     try {
-      const address = template.id === 'getting-started' ? 'B11' : template.id === 'account-balances' ? 'B8' : template.id === 'dao-proposals' ? 'A9' : template.id === 'treasury-overview' ? 'B7' : template.id === 'international-payouts' ? 'B17' : 'E10';
+      const address = template.id === 'getting-started' ? 'B6' : template.id === 'account-balances' ? 'B8' : template.id === 'dao-proposals' ? 'A9' : template.id === 'treasury-overview' ? 'B7' : template.id === 'international-payouts' ? 'B17' : 'E10';
       await vi.waitFor(() => expect(f.sheet.getRange(address).getValue()).toMatch(/Enter/));
       expect(f.balance).not.toHaveBeenCalled(); expect(f.view).not.toHaveBeenCalled();
       expect(f.runtime.operations.size).toBe(0);
-      if (template.id === 'getting-started') {
-        await vi.waitFor(() => expect(f.sheet.getRange('B5').getValue()).toBe(6));
-        f.sheet.getRange('B4').setValue(12);
-        await vi.waitFor(() => expect(f.sheet.getRange('B5').getValue()).toBe(13));
-      }
+    } finally { f.dispose(); }
+  });
+
+  it('opens the guide on NEAR and verified USDT balances with separate totals', async () => {
+    const f = engine('getting-started', undefined, true);
+    try {
+      await vi.waitFor(() => expect(f.sheet.getRange('B9').getValue()).toBe(3.75));
+      await vi.waitFor(() => expect(f.sheet.getRange('C6').getValue()).toBe(2));
+      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe(6));
+      expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_metadata', {});
+      expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_balance_of', { account_id: 'root.near' });
+      expect(f.balance).toHaveBeenCalledWith('mainnet', 'root.near');
+      expect(f.balance).toHaveBeenCalledWith('mainnet', 'social.near');
+      expect(f.balance).toHaveBeenCalledWith('mainnet', 'ref-finance.sputnik-dao.near');
+      f.sheet.getRange('A7').setValue('');
+      await vi.waitFor(() => expect(f.sheet.getRange('B9').getValue()).toBe('Enter accounts and network'));
+      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe('Enter accounts, network and token'));
+      f.sheet.getRange('A7').setValue('social.near');
+      f.view.mockClear();
+      f.sheet.getRange('B3').setValue('testnet');
+      await vi.waitFor(() => expect(f.sheet.getRange('C6').getValue()).toBe('USDT example uses mainnet'));
+      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe('USDT example uses mainnet'));
+      expect(f.view).not.toHaveBeenCalledWith('testnet', 'usdt.tether-token.near', 'ft_metadata', {});
+      f.sheet.getRange('B4').setValue('token.testnet');
+      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe(6));
+      expect(f.sheet.getRange('C5').getValue()).toBe('Token balance');
+      expect(f.view).toHaveBeenCalledWith('testnet', 'token.testnet', 'ft_metadata', {});
+      f.sheet.getRange('B4').setValue('');
+      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe('Enter accounts, network and token'));
+      expect(f.runtime.operations.size).toBe(0);
+    } finally { f.dispose(); }
+  });
+
+  it('ends the guide with an optional exact proposal draft and receipt without submitting on calculation', async () => {
+    const f = engine('getting-started');
+    try {
+      const transaction = f.book.getSheetByName('Try a transaction')!;
+      await vi.waitFor(() => expect(transaction.getRange('B11').getValue()).toBe('Enter all inputs above'));
+      expect(f.balance).not.toHaveBeenCalled(); expect(f.view).not.toHaveBeenCalled();
+      expect(f.runtime.operations.size).toBe(0);
+      transaction.getRange('B4').setValue('dao.testnet');
+      transaction.getRange('B6').setValue('alice.testnet');
+      transaction.getRange('B7').setValue({ v: '0.000000000000000000000001', t: 1 });
+      transaction.getRange('B8').setValue('tutorial-payment-1');
+      await vi.waitFor(() => expect(transaction.getRange('B12').getValue()).toBe('Draft · not submitted'));
+      expect(f.runtime.operations.get(String(transaction.getRange('B11').getValue()))).toMatchObject({
+        source: 'dao.testnet', recipient: 'alice.testnet', amount: '0.000000000000000000000001', baseUnits: '1',
+      });
+      await vi.waitFor(() => expect(transaction.getRange('A25').getValue()).toBe('Not submitted'));
+      expect(f.runtime.executions).toEqual({});
     } finally { f.dispose(); }
   });
 

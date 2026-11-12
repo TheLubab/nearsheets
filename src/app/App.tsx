@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Dialog } from '../components/ui/dialog';
 import { Toaster } from '../components/ui/sonner';
 import { loadingToast, TOAST_IDS } from '../components/ui/toast';
@@ -17,6 +17,8 @@ import { useIntegrations } from './app-providers';
 import { TemplateDialogs } from '../features/templates/TemplateDialogs';
 import { createWelcomePreference } from '../features/templates/welcome-preference';
 import { HelpMenu } from './HelpMenu';
+import { gettingStartedInterfaceSteps, startInterfaceTourWhenReady } from '../features/onboarding/interface-tour';
+import { REPLAY_BLOCKCHAIN_TOUR_EVENT } from '../features/onboarding/blockchain-tour';
 
 export function App() {
   const [repository] = useState(()=>new DexieDocumentRepository());
@@ -30,6 +32,31 @@ export function App() {
   const activeSession=readyEditor?.documentId===state.document?.documentId?readyEditor?.session??null:null;
   const [welcomePreference] = useState(() => createWelcomePreference());
   const [templateView, setTemplateView] = useState<'welcome' | 'templates' | null>(null);
+  const [guideDocumentId, setGuideDocumentId] = useState<string | null>(null);
+  const [guideTransactionSheet, setGuideTransactionSheet] = useState<{ documentId: string; sheetId: string } | null>(null);
+  const [guideRequested, setGuideRequested] = useState(false);
+  const [guideRun, setGuideRun] = useState(0);
+  const currentGuide = guideDocumentId === state.document?.documentId;
+  const rememberGuide = (fromGettingStarted = false) => {
+    const document = workspace.getState().document;
+    if (!document) return;
+    setGuideDocumentId(document.documentId);
+    const transactionSheetId = document.workbook.sheetOrder[1];
+    if (fromGettingStarted && transactionSheetId) setGuideTransactionSheet({ documentId: document.documentId, sheetId: transactionSheetId });
+    setGuideRequested(true); setGuideRun(run => run + 1);
+  };
+  useEffect(() => {
+    if (guideDocumentId && guideDocumentId !== state.document?.documentId) setGuideRequested(false);
+  }, [guideDocumentId, state.document?.documentId]);
+  useLayoutEffect(() => {
+    if (!guideRequested || !currentGuide || state.status !== 'ready' || templateView || accountOpen) return;
+    const transactionSheetId = guideTransactionSheet?.documentId === state.document?.documentId ? guideTransactionSheet?.sheetId : undefined;
+    return startInterfaceTourWhenReady({
+      steps: gettingStartedInterfaceSteps(transactionSheetId),
+      onStopped: () => setGuideRequested(false),
+      onError: message => workspace.reportError(message),
+    });
+  }, [guideRequested, currentGuide, templateView, accountOpen, guideRun, workspace, state.status, state.document?.documentId, guideTransactionSheet]);
   const welcomeConsidered = useRef(false);
   useEffect(() => {
     // Startup saves a blank workbook before the user chooses how to begin.
@@ -78,8 +105,10 @@ export function App() {
     <header className="app-shell__header">
       <h1 className="brand" title="NearSheets"><img className="brand__mark" src={`${import.meta.env.BASE_URL}near-sheets-mark.svg`} width={32} height={27} alt=""/><span>NearSheets</span></h1>
       <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document} onTemplates={() => changeTemplateView('templates')} onWelcome={() => setTemplateView('welcome')}/>
-      <HelpMenu/>
-      <button type="button" className={`account-control ${walletState.connection ? 'account-control--connected' : 'account-control--connect'}`} onClick={()=>{wallet.clearFeedback();setAccountOpen(true);}} aria-label={walletState.connection ? `Wallet account ${walletState.connection.accountId}` : 'Sign In'} title={walletState.connection?.accountId}>
+      <HelpMenu onGettingStarted={() => { void workspace.createFromTemplate('getting-started').then(created => { if (created) rememberGuide(true); }); }}
+        onInterfaceTour={state.status === 'ready' ? () => rememberGuide() : undefined}
+        onBlockchainTour={activeSession ? () => window.dispatchEvent(new Event(REPLAY_BLOCKCHAIN_TOUR_EVENT)) : undefined}/>
+      <button type="button" data-guide-wallet className={`account-control ${walletState.connection ? 'account-control--connected' : 'account-control--connect'}`} onClick={()=>{wallet.clearFeedback();setAccountOpen(true);}} aria-label={walletState.connection ? `Wallet account ${walletState.connection.accountId}` : 'Sign In'} title={walletState.connection?.accountId}>
         {walletState.connection ? <span className="account-control__wallet-icon" aria-hidden="true">{walletState.connection.walletIcon && walletState.connection.walletIcon !== failedWalletIcon ? <img src={walletState.connection.walletIcon} alt="" onError={() => setFailedWalletIcon(walletState.connection?.walletIcon ?? null)}/> : <WalletIcon size={20}/>}</span> : null}
         <span>{walletState.connection?.accountId ?? (walletState.status === 'connecting' ? 'Connecting…' : 'Sign In')}</span>
       </button>
@@ -90,7 +119,7 @@ export function App() {
       {state.status === 'error' ? <div className="workbook-status" role="alert">{state.notice?.message ?? 'Documents could not be opened.'}</div> : null}
     </main>
     </TableActions>
-    <TemplateDialogs workspace={workspace} view={templateView} onViewChange={changeTemplateView}/>
+    <TemplateDialogs workspace={workspace} view={templateView} onViewChange={changeTemplateView} onGuideCreated={() => rememberGuide(true)}/>
     <Toaster/>
   </div>;
 }

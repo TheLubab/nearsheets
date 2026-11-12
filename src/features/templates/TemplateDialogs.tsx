@@ -60,17 +60,22 @@ function useTemplateCreation(workspace: DocumentWorkspace, onCreated: () => void
   return { creating, error, setError, create };
 }
 
-function Shell({ open, onOpenChange, className, children, withClose }: {
+function Shell({ open, onOpenChange, className, children, withClose, initialFocusContent = false }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   className: string;
   children: React.ReactNode;
   withClose: boolean;
+  initialFocusContent?: boolean;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
   return <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="dialog-overlay"/>
-      <DialogPrimitive.Content className={className} aria-describedby={undefined}>
+      <DialogPrimitive.Content ref={contentRef} className={className} aria-describedby={undefined}
+        onOpenAutoFocus={event => {
+          if (initialFocusContent) { event.preventDefault(); contentRef.current?.focus(); }
+        }}>
         {children}
         {withClose ? <DialogPrimitive.Close className="template-dialog__close" aria-label="Close"><CloseIcon size={16}/></DialogPrimitive.Close> : null}
       </DialogPrimitive.Content>
@@ -78,34 +83,41 @@ function Shell({ open, onOpenChange, className, children, withClose }: {
   </DialogPrimitive.Root>;
 }
 
-/** The welcome window: a photograph beside the three ways to start. */
-export function WelcomeDialog({ workspace, open, onCreated, onUseTemplate }: {
+/** The welcome window: animated lavender beside the three ways to start. */
+export function WelcomeDialog({ workspace, open, onCreated, onUseTemplate, onGuideCreated }: {
   workspace: DocumentWorkspace;
   open: boolean;
   onCreated(): void;
   onUseTemplate(): void;
+  onGuideCreated?(): void;
 }) {
-  const { creating, error, setError, create } = useTemplateCreation(workspace, onCreated);
-  return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onCreated(); } }} className="welcome-dialog" withClose={!creating}>
+  const { creating, error, setError, create } = useTemplateCreation(workspace, () => { onGuideCreated?.(); onCreated(); });
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onCreated(); } }} className="welcome-dialog" withClose={!creating} initialFocusContent>
     <div className="welcome-dialog__media">
-      <img src={`${import.meta.env.BASE_URL}lavender-field.jpg`} alt="" width={1068} height={778} decoding="async"/>
+      <img src={`${import.meta.env.BASE_URL}lavender-field.jpg`} alt="" width={1068} height={778} loading="eager" fetchPriority="high" decoding="async"/>
+      <video className={videoPlaying ? 'welcome-dialog__video--playing' : undefined}
+        src={`${import.meta.env.BASE_URL}lavender.webm`} poster={`${import.meta.env.BASE_URL}lavender-field.jpg`}
+        autoPlay muted loop playsInline preload="auto" aria-hidden="true"
+        onLoadStart={() => setVideoPlaying(false)} onPlaying={() => setVideoPlaying(true)} onError={() => setVideoPlaying(false)}/>
       <a className="welcome-dialog__credit" href="https://unsplash.com/photos/close-up-photo-of-lavender-SavQfLRm4Do" target="_blank" rel="noopener noreferrer">
         Photo by Alexander Grey
       </a>
     </div>
     <div className="welcome-dialog__body">
-      <DialogPrimitive.Title className="welcome-dialog__title">Welcome to NearSheets</DialogPrimitive.Title>
+      <DialogPrimitive.Title className="welcome-dialog__title">Your treasury, in a spreadsheet</DialogPrimitive.Title>
       <p className="welcome-dialog__description">
-        A spreadsheet where blockchain lives in cells. Read on-chain data, prepare transactions and reconcile results without leaving the grid.
+        Track balances, plan payments and submit proposals for approval, all from cells your team can work with.
       </p>
       <div className="template-dialog__choices">
-        <Choice icon={SquareAcademicCapIcon} title="Getting started" summary="A guided tour of the basics."
+        <Choice icon={SquareAcademicCapIcon} title="Show me how" summary="Learn with an editable example."
           disabled={!!creating} onSelect={() => void create('getting-started')}/>
-        <Choice icon={ClipboardListIcon} title="Use a template" summary="Start from a ready-made layout."
+        <Choice icon={ClipboardListIcon} title="Start with a template" summary="Explore payroll, budgets and treasury workflows."
           disabled={!!creating} onSelect={() => { setError(null); onUseTemplate(); }}/>
-        <Choice icon={AddSquareIcon} title="Start blank" summary="Create a new spreadsheet."
+        <Choice icon={AddSquareIcon} title="Open a blank sheet" summary="Build your own workbook."
           disabled={!!creating} onSelect={onCreated}/>
       </div>
+      <p className="welcome-dialog__reassurance">Free to use. No sign-in required to view or edit spreadsheets.</p>
       {creating ? <p className="template-dialog__status" role="status">Creating spreadsheet…</p> : null}
       {error ? <p className="template-dialog__error" role="alert">{error}</p> : null}
     </div>
@@ -156,14 +168,15 @@ export function TemplatesDialog({ workspace, open, onCreated }: {
 }
 
 /** Mounts the window for the active view; each step owns its own component. */
-export function TemplateDialogs({ workspace, view, onViewChange }: {
+export function TemplateDialogs({ workspace, view, onViewChange, onGuideCreated }: {
   workspace: DocumentWorkspace;
   view: TemplateDialogView;
   onViewChange(view: TemplateDialogView): void;
+  onGuideCreated?(): void;
 }) {
   const close = useCallback(() => onViewChange(null), [onViewChange]);
   return <>
-    <WelcomeDialog workspace={workspace} open={view === 'welcome'} onCreated={close} onUseTemplate={() => onViewChange('templates')}/>
+    <WelcomeDialog workspace={workspace} open={view === 'welcome'} onCreated={close} onUseTemplate={() => onViewChange('templates')} onGuideCreated={onGuideCreated}/>
     <TemplatesDialog workspace={workspace} open={view === 'templates'} onCreated={close}/>
   </>;
 }

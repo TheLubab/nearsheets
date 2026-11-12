@@ -588,9 +588,12 @@ body { background: var(--background); color: var(--foreground); }
 
 /* Welcome: photograph beside the choices, stacked on narrow screens. */
 .welcome-dialog { width: min(760px, calc(100vw - 24px)); height: min(540px, 85dvh); display: grid; grid-template-columns: 1fr 1fr; }
+.welcome-dialog:focus { outline: none; }
 .welcome-dialog__media { position: relative; margin: 0; overflow: hidden; background: var(--accent-soft); }
-/* Absolute fill keeps the photo from contributing intrinsic height to the grid row. */
-.welcome-dialog__media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 60%; }
+/* Keep the eagerly loaded image beneath the video, including on playback failure. */
+.welcome-dialog__media :is(img, video) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 60%; }
+.welcome-dialog__media video { opacity: 0; pointer-events: none; }
+.welcome-dialog__media .welcome-dialog__video--playing { opacity: 1; }
 /* A quiet photographer credit: a small translucent pill over the bottom-right of the photo. */
 .welcome-dialog__credit {
   position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px);
@@ -607,6 +610,7 @@ body { background: var(--background); color: var(--foreground); }
 .welcome-dialog__body { min-width: 0; padding: 32px; overflow: auto; display: flex; flex-direction: column; justify-content: center; }
 .welcome-dialog__title { margin: 0 0 8px; font-size: 19px; letter-spacing: -.35px; line-height: 1.25; }
 .welcome-dialog__description { margin: 0 0 22px; color: var(--muted-foreground); font-size: 13px; line-height: 1.55; }
+.welcome-dialog__reassurance { margin: 16px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
 
 /* Template gallery: quiet previews and room to scan the choices. */
 .templates-dialog { width: min(800px, calc(100vw - 24px)); max-height: 85dvh; display: flex; }

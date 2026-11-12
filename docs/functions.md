@@ -1,5 +1,7 @@
 # NearSheets formula catalog
 
+The getting-started guide reads NEAR with `NEAR_BALANCE` and mainnet USDT with `FT_BALANCE`, keeping per-asset totals separate. Its optional transaction sheet uses `SPUTNIK_TRANSFER`, `NS_STATUS` and `NS_RECEIPT` to prepare a proposal and display the recorded outcome after explicit wallet execution.
+
 The payroll, invoice, community budget and grants templates use `SPUTNIK_TRANSFER` and `NS_STATUS`. Treasury overview uses balance/proposal reads and an optional `SPUTNIK_STAKE` sheet; Proposal review adds `SPUTNIK_VOTE`. International payouts compares three `INTENTS_QUOTE` scenarios, prepares `INTENTS_SWAP`, and separates `NS_RECEIPT` from `INTENTS_STATUS`. Payment workbooks include receipt sheets. Gallery templates open on live public reads; action inputs and quote-only address configuration are separate. Template labels describe familiar workflows; these functions retain the exact signatures and approval requirements below.
 
 Checked against `TABLE_FUNCTIONS` in `src/features/table/runtime.ts` on 2026-11-11. These are application functions, not built-in Univer or upstream NEAR APIs. All listed arguments are required. Network arguments accept `mainnet` or `testnet`; Intents swaps currently require `mainnet`. Choose a Blockchain dropdown entry for guided arguments or type the formula directly. The dialog accepts an expression beginning with `=` to insert a cell reference or nested formula instead of a literal.

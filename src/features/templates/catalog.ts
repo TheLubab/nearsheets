@@ -50,23 +50,54 @@ function workbook(name: string, main: Sheet): WorkbookSnapshot {
 }
 function gettingStarted() {
   const s = sheet('Start here');
-  line(s, 1, 'Welcome to NearSheets — about five minutes', true);
-  line(s, 2, '1. Edit B4. B5 follows that cell reference. This example works offline.');
-  input(s, 4, 'a number', '5');
-  cell(s, 5, 1, 'Your number + 1'); cell(s, 5, 2, '=B4+1');
-  line(s, 7, '2. Read your account balance. Enter an existing account and its network.', true);
-  input(s, 8, 'network', 'testnet');
-  headers(s, 10, ['Input: account', 'Balance (NEAR)']);
-  cell(s, 11, 1, '', true);
-  cell(s, 11, 2, '=IF(OR(A11="",$B$8=""),"Enter account and network",NEAR_BALANCE(A11,$B$8))');
-  line(s, 13, '3. Enter another account in A15. Copy B11 into B15; the account reference moves while $B$8 stays fixed.', true);
-  cell(s, 15, 1, '', true);
-  line(s, 17, '4. Preparing, reviewing and signing are separate steps.', true);
-  line(s, 18, 'Formulas prepare editable drafts. Select prepared cells and choose Blockchain → Review actions to inspect exact calls.');
-  line(s, 19, 'Only Sign reviewed actions requests your wallet. A submitted DAO proposal is not a completed payment.');
-  line(s, 21, 'Next: File → Templates… → Team payroll. Supply your treasury, recipient, reference and amount.');
-  line(s, 22, 'No wallet is required for this tutorial. Refresh reads from Blockchain; use Details to inspect errors and freshness.');
-  return workbook('Getting started', s);
+  line(s, 1, 'Read live blockchain data.', true);
+  line(s, 2, 'NEAR_BALANCE reads NEAR; FT_BALANCE reads the token in B4. Change any account below to check its balances.');
+  input(s, 3, 'network', 'mainnet');
+  input(s, 4, 'token contract', 'usdt.tether-token.near');
+  headers(s, 5, ['Account', 'Balance (NEAR)', 'Balance (USDT)']);
+  cell(s, 5, 3, '=IF(B4="usdt.tether-token.near","Balance (USDT)","Token balance")');
+  s.cellData![4]![2]!.s = { bl: 1, bg: { rgb: '#E6DCF9' } };
+  ['root.near', 'social.near', 'ref-finance.sputnik-dao.near'].forEach((account, i) => {
+    const r = 6 + i;
+    cell(s, r, 1, account, true);
+    cell(s, r, 2, `=IF(OR(A${r}="",$B$3=""),"Enter account and network",NEAR_BALANCE(A${r},$B$3))`);
+    cell(s, r, 3, `=IF(OR(A${r}="",$B$3="",$B$4=""),"Enter account, network and token",IF(AND($B$4="usdt.tether-token.near",$B$3<>"mainnet"),"USDT example uses mainnet",FT_BALANCE($B$4,A${r},$B$3)))`);
+  });
+  cell(s, 9, 1, 'Totals by asset');
+  cell(s, 9, 2, '=IF(OR(A6="",A7="",A8="",B3=""),"Enter accounts and network",SUM(B6:B8))');
+  cell(s, 9, 3, '=IF(OR(A6="",A7="",A8="",B3="",B4=""),"Enter accounts, network and token",IF(AND(B4="usdt.tether-token.near",B3<>"mainnet"),"USDT example uses mainnet",SUM(C6:C8)))');
+  const book = workbook('Getting started with NearSheets', s);
+  const transaction = gettingStartedTransaction();
+  book.sheetOrder.push(transaction.id!);
+  book.sheets[transaction.id!] = transaction;
+  return book;
+}
+
+function gettingStartedTransaction() {
+  const s = sheet('Try a transaction');
+  line(s, 1, 'Optional: submit a payment proposal', true);
+  line(s, 2, 'This signs a real transaction to create a Sputnik treasury proposal. Use testnet to practice without spending mainnet funds.');
+  line(s, 3, '1. Fill in the yellow cells. You need proposal permission on the treasury and funds in your wallet for fees and the proposal bond.');
+  input(s, 4, 'Sputnik treasury account');
+  input(s, 5, 'network', 'testnet');
+  input(s, 6, 'recipient account');
+  input(s, 7, 'amount (NEAR)');
+  input(s, 8, 'unique payment reference');
+  line(s, 9, 'Enter the exact amount as decimal text. Use a new reference for each new payment. Editing these cells does not submit anything.');
+  const guard = 'OR(B4="",B5="",B6="",B7="",B8="")';
+  cell(s, 11, 1, 'Prepared proposal');
+  cell(s, 11, 2, `=IF(${guard},"Enter all inputs above",SPUTNIK_TRANSFER(B8,B4,B6,B7,"near",B5))`);
+  cell(s, 12, 1, 'Submission status');
+  cell(s, 12, 2, `=IF(${guard},"No draft yet",NS_STATUS(B11))`);
+  line(s, 14, '2. Connect your wallet using Sign In. Choose the same network as B5.', true);
+  line(s, 15, 'Select B11, then choose Blockchain → Review actions. Check the treasury, recipient, exact amount, fees and proposal bond.');
+  line(s, 17, '3. Choose Sign reviewed actions, then approve the request in your wallet if the details are correct.', true);
+  line(s, 18, 'You can cancel in the wallet. B12 shows the recorded outcome; the receipt appears below.');
+  line(s, 20, 'Submitting a proposal does not pay the recipient. The treasury must approve and execute it under its own rules.');
+  line(s, 21, 'If the outcome is uncertain, use Details to reconcile the transaction before trying again.');
+  line(s, 23, 'Submission receipt. Leave the cells below empty for the result.', true);
+  cell(s, 25, 1, `=IF(${guard},"No transaction submitted",NS_RECEIPT(B11))`);
+  return s;
 }
 function accountBalances() {
   const s = sheet('Balances');
@@ -156,7 +187,7 @@ function internationalPayouts() {
 }
 
 const templates: readonly WorkbookTemplate[] = [
-  { id: 'getting-started', name: 'Getting started', description: 'A five-minute editable introduction, starting offline.', preview: [['Input: a number', '5'], ['Your number + 1', '=B4+1'], ['Input: account', 'Balance (NEAR)']], createWorkbook: gettingStarted },
+  { id: 'getting-started', name: 'Getting started with NearSheets', description: 'Read NEAR and USDT balances, inspect blockchain data and optionally sign a proposal.', preview: [['Public account', 'NEAR', 'USDT'], ['Live balances', 'NEAR_BALANCE', 'FT_BALANCE'], ['Proposal draft', 'Wallet transaction', '']], createWorkbook: gettingStarted },
   { id: 'contributor-payments', name: 'Team payroll', description: 'Calculate hours and rates, then review treasury payments.', preview: [['Reference', 'Team member', 'Amount'], ['Pay run', 'Recipient', 'Amount'], ['Treasury proposal', 'Status', '']], createWorkbook: () => paymentWorkbook() },
   { id: 'invoices-expenses', name: 'Invoices & expenses', description: 'Track outstanding bills and due dates before preparing payments.', preview: [['Reference', 'Vendor', 'Amount'], ['Invoice', 'Recipient', 'Amount']], createWorkbook: () => paymentWorkbook('Invoices & expenses', 'vendor', ['Invoice / category', 'Due date (note)']) },
   { id: 'community-budget', name: 'Community budget', description: 'Compare category budgets and commitments, then prepare spending.', preview: [['Reference', 'Recipient', 'Amount'], ['Community expense', 'Recipient', 'Amount']], createWorkbook: () => paymentWorkbook('Community budget', 'recipient', ['Purpose', 'Budget category']) },
