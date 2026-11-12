@@ -1,7 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import {FUniver} from '@univerjs/core/facade';
-import {Univer, LocaleType, CellValueType, IResourceManagerService} from '@univerjs/core';
-import {UniverSheetsPlugin, SetNumfmtMutation, transformCellsToRange} from '@univerjs/sheets';
+import {Univer, LocaleType, CellValueType, BooleanNumber, IResourceManagerService} from '@univerjs/core';
+import {UniverSheetsPlugin, SetNumfmtMutation, SetRangeValuesMutation, SetShrinkToFitCommand, transformCellsToRange} from '@univerjs/sheets';
 import {UniverSheetsNumfmtPlugin} from '@univerjs/sheets-numfmt';
 import '@univerjs/sheets/facade';
 import {getPatternPreview} from '@univerjs/sheets-numfmt';
@@ -27,6 +27,8 @@ describe('balance presentation', () => {
     range.setValue({f:'=NEAR_BALANCE("alice.testnet","testnet")',v:42,t:CellValueType.NUMBER});
     calculated(); await Promise.resolve();
     expect(range.getNumberFormat()).toBe('#,##0');
+    expect(range.getShrinkToFit()).toBe(true);
+    expect(range.getFormula()).toContain('NEAR_BALANCE');
     range.setNumberFormat(pattern);
     // Save immediately, before another formula calculation can observe it.
     const snapshot = JSON.parse(JSON.stringify(book.save()));
@@ -37,6 +39,7 @@ describe('balance presentation', () => {
     reopened.setValue({f:'=NEAR_BALANCE("alice.testnet","testnet")',v:12.5,t:CellValueType.NUMBER});
     calculated(); await Promise.resolve();
     expect(reopened.getNumberFormat()).toBe(pattern);
+    expect(reopened.getShrinkToFit()).toBe(true);
     registration.dispose(); univer.dispose();
   });
 
@@ -54,6 +57,7 @@ describe('balance presentation', () => {
     const range = book.getActiveSheet().getRange('B2');
     range.setValue({f:'=NEAR_BALANCE("alice.testnet","testnet")',v:42,t:CellValueType.NUMBER});
     calculated(); await Promise.resolve();
+    expect(range.getShrinkToFit()).toBe(true);
     const snapshot = JSON.parse(JSON.stringify(book.save()));
     api.disposeUnit(book.getId());
     const reopened = api.createWorkbook(snapshot).getActiveSheet().getRange('B2');
@@ -94,26 +98,37 @@ describe('balance presentation', () => {
   it('formats inserted and typed formulas without extra undo commands or overwriting toolbar choices', async () => {
     let cell = {f:'=NEAR_BALANCE("alice.testnet","testnet")',v:42};
     let pattern = '';
+    let shrink = false;
     let changed = () => {};
     let calculated = () => {};
+    let command = (_event:unknown) => {};
     const listener = {dispose:vi.fn()};
-    const executeCommand = vi.fn((_id, params) => {
+    const executeCommand = vi.fn((id, params) => {
+      if (id === SetRangeValuesMutation.id) {
+        shrink = (params.cellValue as Array<Array<{s?:{stf?:number}}>>)[19]?.[8]?.s?.stf === BooleanNumber.TRUE;
+        return Promise.resolve(true);
+      }
       pattern = Object.values(params.refMap as Record<string,{pattern:string}>)[0]!.pattern;
       return Promise.resolve(true);
     });
     const api = {
       Event:{SheetValueChanged:'change',CommandExecuted:'command'},
-      addEvent:(event:unknown, callback:()=>void) => {if(event==='change')changed = callback; return listener;},
+      addEvent:(event:unknown, callback:()=>void) => {
+        if(event==='change')changed = callback;
+        if(event==='command')command = callback;
+        return listener;
+      },
       getFormula:()=>({calculationEnd:(callback:()=>void)=>{calculated=callback;return listener;}}),
       getActiveWorkbook:()=>({getId:()=> 'book',getSheets:()=>[{
         getSheetId:()=> 'arbitrary-sheet',
         getSheet:()=>({getCellMatrix:()=>({forValue:(callback:(r:number,c:number,value:typeof cell)=>void)=>callback(19,8,cell)})}),
-        getRange:()=>({getNumberFormat:()=>pattern}),
+        getRange:()=>({getNumberFormat:()=>pattern, getShrinkToFit:()=>shrink}),
       }]}), executeCommand,
     } as unknown as FUniver;
     const registration = registerBalanceFormatting(api);
     await Promise.resolve();
     expect(pattern).toBe('#,##0');
+    expect(shrink).toBe(true);
     expect(executeCommand.mock.calls[0]?.[0]).toBe('sheet.mutation.set.numfmt');
     cell.v = 1e-24; calculated(); await Promise.resolve();
     expect(getPatternPreview(pattern,cell.v).result).toBe('<0.000001');
@@ -125,6 +140,10 @@ describe('balance presentation', () => {
     expect(getPatternPreview(pattern,1.25).result).toBe('1.25');
     pattern = '0.00'; calculated(); await Promise.resolve();
     expect(pattern).toBe('0.00');
+    shrink = false;
+    command({id:SetShrinkToFitCommand.id,params:{unitId:'book',subUnitId:'arbitrary-sheet',range:{startRow:19,endRow:19,startColumn:8,endColumn:8},value:BooleanNumber.FALSE}});
+    calculated(); await Promise.resolve();
+    expect(shrink).toBe(false);
     registration.dispose();
     expect(listener.dispose).toHaveBeenCalled();
   });
