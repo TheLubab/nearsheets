@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { readEnv } from "../src/config/env";
+import { DEFAULT_INTENTS_API_URL, readEnv } from "../src/config/env";
 
 describe("public environment configuration", () => {
-  it("allows local development without optional integrations", () => {
+  it("uses the public Intents provider when no URL is supplied", () => {
     const env = readEnv({ VITE_TREZU_API_URL: "", VITE_INTENTS_API_URL: "" });
     expect(env.VITE_NEAR_NETWORK).toBe("testnet");
     expect(env.VITE_TREZU_API_URL).toBeUndefined();
-    expect(env.VITE_INTENTS_API_URL).toBeUndefined();
+    expect(env.VITE_INTENTS_API_URL).toBe(DEFAULT_INTENTS_API_URL);
   });
 
   it("accepts configured optional services", () => {
@@ -14,10 +14,16 @@ describe("public environment configuration", () => {
     expect(env.VITE_INTENTS_API_URL).toBe("https://intents.example.test");
   });
 
+  it("allows explicitly disabling the default Intents provider", () => {
+    const env = readEnv({ VITE_INTENTS_API_URL: "none" });
+    expect(env.VITE_INTENTS_API_URL).toBeUndefined();
+  });
+
   it.each([
     { VITE_NEAR_NETWORK: "wrong-network" },
     { VITE_NEAR_RPC_URL: "not-a-url" },
     { VITE_WALLET_MANIFEST_URL: "javascript:alert(1)" },
+    { VITE_INTENTS_API_URL: "off" },
   ])("rejects invalid supplied configuration", (values) => {
     expect(() => readEnv(values)).toThrow("Invalid environment configuration");
   });

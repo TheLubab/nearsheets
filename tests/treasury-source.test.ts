@@ -131,9 +131,17 @@ describe("integration readiness reporting", () => {
     expect(byKey["intents-api"]?.state).toBe("available");
   });
 
-  it("keeps an unconfigured integration unavailable", () => {
+  it("uses the public Intents provider by default", () => {
     const byKey = Object.fromEntries(
       describeIntegrations(readEnv({})).map((status) => [status.key, status]),
+    );
+
+    expect(byKey["intents-api"]?.state).toBe("available");
+  });
+
+  it("keeps explicitly disabled integrations unavailable", () => {
+    const byKey = Object.fromEntries(
+      describeIntegrations(readEnv({ VITE_INTENTS_API_URL: "none" })).map((status) => [status.key, status]),
     );
 
     expect(byKey["trezu-api"]?.state).toBe("not-configured");

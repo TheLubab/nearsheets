@@ -587,13 +587,17 @@ body { background: var(--background); color: var(--foreground); }
 .dialog-content a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
 /* Native Blockchain selectors and transient, sheet-focused workflow controls. */
-.function-menu { width: min(390px, calc(100vw - 40px)); padding: 8px; color: var(--foreground); background: var(--app-surface); }
+.function-menu { display: grid; gap: 10px; width: min(390px, calc(100vw - 40px)); padding: 12px; color: var(--foreground); background: var(--app-surface); }
 .function-menu input { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 6px; font: inherit; }
-.function-menu [role="group"] { max-height: min(480px,60vh); overflow-y: auto; }
-.function-menu button { display: grid; width: 100%; gap: 3px; padding: 10px; border: 0; border-radius: 6px; text-align: left; font: inherit; color: inherit; background: transparent; cursor: pointer; }
-.function-menu button:hover, .function-menu button:focus-visible { background: var(--muted); }
-.function-menu button[aria-disabled="true"] { color: var(--muted-foreground); }
-.function-menu small, .function-menu span { font-size: 12px; line-height: 1.45; color: var(--muted-foreground); }
+.function-menu__scroll { display: grid; gap: 4px; }
+.function-menu button { display: grid; width: 100%; gap: 5px; min-height: 44px; padding: 12px 10px; border: 0; border-radius: 8px; text-align: left; font: inherit; color: inherit; background: transparent; cursor: pointer; }
+.function-menu button:not([aria-disabled="true"]):hover, .function-menu button:focus-visible { background: var(--muted); }
+.function-menu button[aria-disabled="true"] { cursor: default; }
+.function-menu button[aria-disabled="true"] .function-menu__title { color: var(--muted-foreground); }
+.function-menu__title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; line-height: 1.35; color: var(--foreground); }
+.function-menu__badge { padding: 1px 6px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: 10px; font-style: normal; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+.function-menu__description { font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.function-menu__empty { margin: 0; padding: 0 10px; font-size: 11px; line-height: 1.45; color: var(--muted-foreground); }
 .function-menu :focus-visible, .reference-picker :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .argument-control { display: flex; gap: 6px; align-items: start; }
 .argument-control :is(input,select,textarea) { flex: 1; min-width: 0; }

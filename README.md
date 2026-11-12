@@ -42,7 +42,7 @@ Submission creates a DAO proposal or casts a vote; it does not by itself establi
 
 ## Intents and wallet scope
 
-The configured public 1Click-compatible API supplies the runtime asset catalog, `dry:true` estimates and explicit `dry:false` preparation. DAO funding currently supports mainnet NEAR fungible tokens with validated NEAR, EVM or Solana destinations. Unknown assets, chains without a validator, incompatible precision and expired quotes fail explicitly. There is no Intents testnet route, automatic native-NEAR wrapping, confidential custody or browser-held partner secret.
+The public 1Click-compatible API defaults to `https://1click.chaindefuser.com`; set `VITE_INTENTS_API_URL` to another endpoint or to `none` to disable it. It supplies the runtime asset catalog, `dry:true` estimates and explicit `dry:false` preparation. DAO funding currently supports mainnet NEAR fungible tokens with validated NEAR, EVM or Solana destinations. Unknown assets, chains without a validator, incompatible precision and expired quotes fail explicitly. There is no Intents testnet route, automatic native-NEAR wrapping, confidential custody or browser-held partner secret.
 
 Expired submitted routes require a new reference and proposal. NearSheets includes expiry in its proposal description and refuses approval of its expired routes. Plain Sputnik transfers cannot enforce that deadline against other clients. `INTENTS_STATUS` reads the recorded deposit's provider state, including settlement, incomplete deposit and refund, separately from governance status. End-to-end live execution has not been established by the current mocked tests.
 
@@ -64,7 +64,7 @@ Use Node 24 and pnpm. Run `pnpm typecheck`, `pnpm build`, and meaningful focused
 pnpm test tests/balance-format.test.ts tests/table-runtime.test.ts tests/table-selection.test.ts tests/intents-route.test.ts tests/blockchain-ribbon.test.ts
 ```
 
-Configuration is validated centrally in `src/config/env.ts`; `.env.example` lists supported public values. Missing optional integrations disable only their respective features, while malformed supplied values fail clearly. All `VITE_` values are public. A custom RPC override applies only to the configured network. `VITE_TREZU_API_URL` reserves an integration endpoint; no enrichment adapter has been selected. Secrets require an authorized server boundary. This repository does not require a separate service-auth deployment for the current browser-first workflow.
+Configuration is validated centrally in `src/config/env.ts`; `.env.example` lists supported public values. Missing optional integrations disable only their respective features, except the public Intents provider, which defaults to `https://1click.chaindefuser.com`; set `VITE_INTENTS_API_URL=none` to disable it. Malformed supplied values fail clearly. All `VITE_` values are public. A custom RPC override applies only to the configured network. `VITE_TREZU_API_URL` reserves an integration endpoint; no enrichment adapter has been selected. Secrets require an authorized server boundary. This repository does not require a separate service-auth deployment for the current browser-first workflow.
 
 Agents must follow [AGENTS.md](AGENTS.md): do not start servers, browsers, screenshots or live blockchain probes without the required explicit authorization. The last implementation checks passed; automated checks do not establish visual or live-chain acceptance.
 
