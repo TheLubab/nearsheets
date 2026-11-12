@@ -111,7 +111,10 @@ export function createDocumentPersistence(
     dirty = false;
     setState({ status: "saving", savedAt: state.savedAt, error: null });
 
-    inFlight = (async () => {
+    // Assign inFlight before the body can finish synchronously (for example
+    // when the snapshot has not changed). Otherwise a settled promise can be
+    // left inFlight forever, preventing later edits from being captured.
+    inFlight = Promise.resolve().then(async () => {
       try {
         // Snapshot only when actually saving; recalculating on every keystroke
         // would clone the whole workbook for nothing.
@@ -152,7 +155,7 @@ export function createDocumentPersistence(
         rerunRequested = false;
         await runSave();
       }
-    })();
+    });
 
     return inFlight;
   };

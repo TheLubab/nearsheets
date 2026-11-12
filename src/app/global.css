@@ -64,8 +64,32 @@ body { background: var(--background); color: var(--foreground); }
    progress is reported by the toast layer instead of covering the canvas. */
 .workbook-editor__failure { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; background: white; color: #b91c1c; font-size: 13px; text-align: center; }
 .workbook-editor__failure p { margin: 0; max-width: 46ch; }
+/* Univer 1.4's non-menu cell alerts share this class signature. Keep their
+   selection and dismissal behavior while matching the application chrome. */
+.univer-z-\[100\].univer-box-border.univer-rounded-lg.univer-bg-gray-0.univer-px-2.univer-py-1.univer-shadow {
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--foreground);
+  box-shadow: 0 1px 2px #0000000d;
+  font-family: "Inter Variable", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+}
+.univer-z-\[100\].univer-box-border.univer-rounded-lg.univer-bg-gray-0.univer-px-2.univer-py-1.univer-shadow > .univer-flex {
+  height: auto;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.univer-z-\[100\].univer-box-border.univer-rounded-lg.univer-bg-gray-0.univer-px-2.univer-py-1.univer-shadow > .univer-text-sm:not(.univer-flex) {
+  font-size: 12px;
+}
 /* Sonner (shadcn/ui toast). Sonner injects its own structural CSS and sets
    `--width` inline; these overrides only align the surface with our tokens. */
+.menu-content .menu-item { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 7px 10px; text-align: left; }
+.menu-content .menu-item > svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; color: var(--muted-foreground); }
 .app-toaster { font-family: inherit; }
 .app-toaster [data-sonner-toast][data-styled="true"].app-toast {
   padding: 11px 14px; gap: 10px;
@@ -93,8 +117,9 @@ body { background: var(--background); color: var(--foreground); }
 .wallet-panel { margin: 0; border: 0; padding: 0; }
 .service-account { font-size: 12px; color: var(--muted-foreground); }
 .service-account { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 8px; }
-.dialog-overlay { position: fixed; inset: 0; background: #0006; z-index: 70; }
-.dialog-content { position: fixed; z-index: 71; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(700px,calc(100vw - 24px)); max-height: 85dvh; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: white; box-shadow: 0 20px 60px #0003; font-size: 13px; }
+/* Above Univer's cell popups (up to 10000), below NEAR Connect's popup. */
+.dialog-overlay { position: fixed; inset: 0; background: #0006; z-index: 11000; }
+.dialog-content { position: fixed; z-index: 11001; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(700px,calc(100vw - 24px)); max-height: 85dvh; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: white; box-shadow: 0 20px 60px #0003; font-size: 13px; }
 .dialog-title { margin: 0 25px 6px 0; font-size: 18px; letter-spacing: -.4px; }
 .dialog-description { color: var(--muted-foreground); line-height: 1.6; margin: 0 0 18px; }
 .dialog-content .dialog-close { position: absolute; right: 12px; top: 12px; padding: 4px; border: 0; }
@@ -321,6 +346,7 @@ body { background: var(--background); color: var(--foreground); }
 .dialog-content.account-dialog { width: min(460px, calc(100vw - 24px)); padding: 40px 32px; border-radius: 14px; }
 .account-dialog .dialog-title { min-height: 32px; margin: 0 120px 48px 0; padding-top: 4px; font-size: 19px; letter-spacing: -.35px; }
 .wallet-panel { display: grid; gap: 22px; }
+.wallet-panel__choices { display: grid; gap: 10px; }
 .dialog-content button.wallet-panel__choice:not(.primary-button) {
   width: 100%; min-height: 82px; justify-content: flex-start; gap: 14px;
   padding: 16px; text-align: left; border: 0; border-radius: 10px;
@@ -329,6 +355,9 @@ body { background: var(--background); color: var(--foreground); }
 .dialog-content button.wallet-panel__choice:not(.primary-button):hover,
 .dialog-content button.wallet-panel__choice:not(.primary-button):active { background: #f4f4f5; box-shadow: none; }
 .wallet-panel__near-icon { width: 42px; height: 42px; padding: 5px; flex: none; border-radius: 50%; background: #00ec97; }
+.wallet-panel__trezu-icon { width: 42px; height: 42px; flex: none; border-radius: 50%; }
+.wallet-panel__availability { margin-left: auto; color: #52525b; font-size: 12px; }
+.wallet-panel__progress { color: var(--muted-foreground); font-size: 12px; }
 .wallet-panel__icon { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 10px; background: #eeeef0; color: #3f3f46; }
 .wallet-panel__choice-title { font-size: 14px; font-weight: 600; }
 .wallet-panel__identity { display: grid; gap: 6px; padding: 16px; border: 1px solid #d6e3db; border-radius: 10px; background: #f5f9f6; }
@@ -353,3 +382,17 @@ body { background: var(--background); color: var(--foreground); }
   .dialog-content.account-dialog { padding: 32px 24px; }
   .wallet-panel__network-control { top: 32px; right: 24px; }
 }
+
+/* Template controls use the existing application dialog and button patterns. */
+.dialog-content.templates-dialog { width: min(900px, calc(100vw - 24px)); }
+.template-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.template-choice { min-width: 0; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.template-choice h3, .template-choice p { margin: 0; }
+.template-choice p { color: var(--muted-foreground); font-size: 13px; }
+.template-choice button { margin-top: auto; }
+.template-preview { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 10px; }
+.template-preview td { overflow-wrap: anywhere; border: 1px solid var(--border); padding: 5px; }
+.template-preview tr:first-child { background: #ddede3; font-weight: 600; }
+.welcome-choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 700px) { .template-list { grid-template-columns: 1fr; } }

@@ -12,9 +12,9 @@ export function DocumentPicker({workspace,open,onOpenChange:setOpen}:{workspace:
     workspace.listDocuments().then(docs=>{if(current)setDocuments(docs);},cause=>{if(current)setError(String(cause));});
     return ()=>{current=false;};
   },[open,workspace]);
-  return <><Dialog open={open} onOpenChange={setOpen} title="Your workbooks" description="Documents are stored locally in this browser. Export JSON for a portable backup.">
+  return <><Dialog open={open} onOpenChange={setOpen} title="Your nearsheets" description="Nearsheets are stored locally in this browser. Export JSON for a portable backup.">
     {error&&<p role="alert">{error}</p>}
-    {documents === null ? !error&&<p role="status">Loading documents…</p> : documents.length === 0 ? <p>No saved workbooks yet.</p> :
-    <div className="document-picker">{documents.map(doc=><button key={doc.documentId} onClick={async()=>{await workspace.openSavedDocument(doc.documentId);if(workspace.getState().document?.documentId===doc.documentId)setOpen(false);else setError(workspace.getState().notice?.message??'This workbook could not be opened.');}}><strong>{doc.title}</strong><span>{new Date(doc.updatedAt).toLocaleString()}</span></button>)}</div>}
+    {documents === null ? !error&&<p role="status">Loading nearsheets…</p> : documents.length === 0 ? <p>No saved nearsheets yet.</p> :
+    <div className="document-picker">{documents.map(doc=><button key={doc.documentId} onClick={async()=>{await workspace.openSavedDocument(doc.documentId);if(workspace.getState().document?.documentId===doc.documentId)setOpen(false);else setError(workspace.getState().notice?.message??'This nearsheet could not be opened.');}}><strong>{doc.title}</strong><span>{new Date(doc.updatedAt).toLocaleString()}</span></button>)}</div>}
   </Dialog></>;
 }

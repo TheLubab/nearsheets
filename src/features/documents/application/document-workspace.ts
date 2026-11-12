@@ -1,4 +1,7 @@
 import type { Execution } from '../../table/execution';
+import { getWorkbookTemplate } from '../../templates/catalog';
+import { toast } from '../../../components/ui/toast';
+import type { TemplateId } from '../../templates/catalog';
 import { LocaleType } from "@univerjs/core";
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import type { WorkbookSession } from "../../spreadsheet/univer/create-workbook-session";
@@ -74,6 +77,8 @@ export type WorkspaceStatus = "loading" | "ready" | "error";
 
 export interface WorkspaceState {
   status: WorkspaceStatus;
+  /** True only after successful startup from an empty repository. */
+  isNewWorkspace: boolean;
   /** The open document, or `null` while loading or after a fatal error. */
   document: DocumentEnvelope | null;
   saveStatus: SaveStatus;
@@ -119,6 +124,7 @@ export interface DocumentWorkspace {
   /** Flushes unsaved edits before the editor is replaced or unloaded. */
   flush(): Promise<void>;
   createNewDocument(): Promise<void>;
+  createFromTemplate(id: TemplateId): Promise<boolean>;
   listDocuments(): ReturnType<DocumentRepository["list"]>;
   openSavedDocument(documentId: string): Promise<void>;
   rename(title: string): Promise<void>;
@@ -153,6 +159,7 @@ export interface DocumentWorkspace {
 
 const initialState: WorkspaceState = {
   status: "loading",
+  isNewWorkspace: false,
   document: null,
   saveStatus: "saved",
   savedAt: null,
@@ -190,7 +197,10 @@ export function createDocumentWorkspace(
     });
   };
 
-  const noticeError = (message: string) => publish({ notice: { kind: "error", message } });
+  const noticeError = (message: string) => {
+    toast.error(message);
+    publish({ notice: { kind: "error", message } });
+  };
 
   const OPEN_SETTLE_ERROR =
     "The latest edits could not be saved, so the current document was kept open.";
@@ -261,6 +271,7 @@ export function createDocumentWorkspace(
           return;
         }
         setDocument(starter);
+        publish({ isNewWorkspace: true });
       } catch (cause) {
         if (disposed) {
           return;
@@ -329,11 +340,37 @@ export function createDocumentWorkspace(
       }
       await repository.save(document);
       openDocument(document);
-      publish({ notice: { kind: "info", message: "Created a new document." } });
+      toast.success('Created a new document.');
     } catch (cause) {
       noticeError(
         cause instanceof Error ? cause.message : "The new document could not be saved.",
       );
+    }
+  };
+
+  // Shared across both UI entry points, including clicks before React renders.
+  let creatingTemplate = false;
+  const createFromTemplate = async (id: TemplateId): Promise<boolean> => {
+    if (creatingTemplate || disposed || state.status !== 'ready') return false;
+    creatingTemplate = true;
+    try {
+      if (!(await settleBeforeSwitch())) return false;
+      const template = getWorkbookTemplate(id);
+      const document = createDocumentEnvelope({
+        title: template.name, workbook: template.createWorkbook(), treasury, now: now(),
+      });
+      await repository.save(document);
+      if (disposed) return false;
+      // Capture edits made while the new document's persistence was in flight.
+      if (!(await settleBeforeSwitch())) return false;
+      openDocument(document);
+      toast.success(`Created ${template.name}.`);
+      return true;
+    } catch (cause) {
+      noticeError(cause instanceof Error ? cause.message : 'The template could not be saved.');
+      return false;
+    } finally {
+      creatingTemplate = false;
     }
   };
 
@@ -438,15 +475,9 @@ export function createDocumentWorkspace(
       // overwrite a recoverable original.
       await repository.save(imported);
       openDocument(imported);
-      publish({
-        notice: {
-          kind: "info",
-          message:
-            result.migratedFrom === null
-              ? "Imported document."
-              : `Imported document (migrated from version ${result.migratedFrom}).`,
-        },
-      });
+      toast.success(result.migratedFrom === null
+        ? "Imported document."
+        : `Imported document (migrated from version ${result.migratedFrom}).`);
     } catch (cause) {
       noticeError(
         cause instanceof Error ? cause.message : "The imported document could not be saved.",
@@ -478,12 +509,7 @@ export function createDocumentWorkspace(
       }
       await repository.save(document);
       openDocument(document);
-      publish({
-        notice: {
-          kind: "info",
-          message: "Imported CSV as a new document. Formulas and formatting are not part of CSV.",
-        },
-      });
+      toast.success("Imported CSV as a new document. Formulas and formatting are not part of CSV.");
     } catch (cause) {
       noticeError(
         cause instanceof Error ? cause.message : "The imported document could not be saved.",
@@ -538,6 +564,7 @@ export function createDocumentWorkspace(
       await persistence?.saveNow();
     },
     createNewDocument: newDocument,
+    createFromTemplate,
     listDocuments: () => repository.list(),
     openSavedDocument: async (id) => {
       try {

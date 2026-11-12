@@ -78,6 +78,15 @@ describe("wallet controller", () => {
     expect(controller.getState().connection).toEqual(CONNECTION);
   });
 
+  it("passes a direct Trezu choice to the wallet gateway", async () => {
+    const gateway = fakeGateway("mainnet", async () => CONNECTION);
+    const connect = vi.spyOn(gateway, "connect");
+    const controller = controllerFor(gateway);
+    await controller.connect("trezu-wallet");
+    expect(connect).toHaveBeenCalledWith("trezu-wallet");
+    controller.dispose();
+  });
+
   it("treats a cancelled selector as recoverable, not an error", async () => {
     const gateway = fakeGateway("testnet", async () => {
       throw new WalletCancelledError();
@@ -90,7 +99,7 @@ describe("wallet controller", () => {
     expect(cancelled.error).toBeNull();
     expect(cancelled.cancelled).toBe(true);
 
-    controller.dismissCancelled();
+    controller.clearFeedback();
     expect(controller.getState().cancelled).toBe(false);
 
     // A second attempt is allowed and can succeed without a page reload.
@@ -112,6 +121,14 @@ describe("wallet controller", () => {
     expect(controller.getState()).toMatchObject({
       status: "disconnected",
       error: "Wallet manifest could not be loaded",
+      cancelled: false,
+    });
+    controller.clearFeedback();
+    expect(controller.getState()).toMatchObject({
+      status: "disconnected",
+      network: "testnet",
+      connection: null,
+      error: null,
       cancelled: false,
     });
   });

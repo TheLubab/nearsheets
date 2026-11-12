@@ -48,7 +48,7 @@ export type Unsubscribe = () => void;
 export interface WalletController {
   getState(): WalletState;
   subscribe(listener: () => void): Unsubscribe;
-  connect(): Promise<void>;
+  connect(walletId?: "trezu-wallet"): Promise<void>;
   restore(): Promise<void>;
   disconnect(): Promise<void>;
   authorize(payload:string): Promise<{accountId:string;authorization:string}>;
@@ -61,8 +61,8 @@ export interface WalletController {
    * cancellation (nothing sent) from a real failure.
    */
   signAndSendTransaction(transaction: WalletTransaction): Promise<unknown>;
-  /** Clears the recoverable cancellation notice. */
-  dismissCancelled(): void;
+  /** Clears feedback from the previous wallet attempt. */
+  clearFeedback(): void;
   dispose(): void;
 }
 
@@ -105,14 +105,14 @@ export function createWalletController(
 
   attach();
 
-  const connect = async (): Promise<void> => {
+  const connect = async (walletId?: "trezu-wallet"): Promise<void> => {
     if (disposed || state.status === "connecting" || state.status === "connected") {
       return;
     }
     const request = ++connectionGeneration;
     publish({ status: "connecting", error: null, cancelled: false });
     try {
-      const connection = await gateway.connect();
+      const connection = await gateway.connect(walletId);
       if (disposed || request !== connectionGeneration) {
         return;
       }
@@ -221,9 +221,9 @@ export function createWalletController(
       }
       return gateway.signAndSendTransaction(transaction);
     },
-    dismissCancelled: () => {
-      if (state.cancelled) {
-        publish({ cancelled: false });
+    clearFeedback: () => {
+      if (state.cancelled || state.error) {
+        publish({ cancelled: false, error: null });
       }
     },
     dispose: () => {

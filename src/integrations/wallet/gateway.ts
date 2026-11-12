@@ -51,7 +51,7 @@ export interface WalletTransaction {
 export interface WalletGateway {
   readonly network: NearNetwork;
   /** Resolves with the signed-in account; rejects with `WalletCancelledError` when the user closes the selector. */
-  connect(): Promise<WalletConnection>;
+  connect(walletId?: "trezu-wallet"): Promise<WalletConnection>;
   restore?(): Promise<WalletConnection|null>;
   disconnect(): Promise<void>;
   authorize?(payload:string): Promise<{accountId:string;authorization:string}>;
@@ -107,7 +107,8 @@ export function createConnectorWalletGateway(
   const config = options.config ?? env;
   const signOutListeners = new Set<() => void>();
   let connector: Connector | null = null;
-  let connectorPromise: Promise<Connector> | null = null;
+  const connectorPromises = new Map<boolean, Promise<Connector>>();
+  const connectors = new Map<Connector, () => void>();
   let wallet: ConnectorWallet | null = null;
   let disposed = false;
 
@@ -118,19 +119,24 @@ export function createConnectorWalletGateway(
     }
   };
 
-  const getConnector = (): Promise<Connector> => {
+  const getConnector = (excludeTrezu = false): Promise<Connector> => {
     if (disposed) {
       return Promise.reject(new Error("The wallet connection has been closed."));
     }
-    connectorPromise ??= createWalletConnector(config, options.network).then(
+    let promise = connectorPromises.get(excludeTrezu);
+    if (!promise) {
+      promise = createWalletConnector(config, options.network, excludeTrezu).then(
       (created) => {
         if (disposed) throw new Error('Wallet connection was closed.');
-        created.on("wallet:signOut", handleSignOut);
-        connector = created;
+        const listener = () => { if (connector === created) handleSignOut(); };
+        created.on("wallet:signOut", listener);
+        connectors.set(created, listener);
         return created;
       },
-    );
-    return connectorPromise;
+      );
+      connectorPromises.set(excludeTrezu, promise);
+    }
+    return promise;
   };
 
   return {
@@ -142,15 +148,18 @@ export function createConnectorWalletGateway(
         if(disposed) return null;
         const account = restored.accounts[0];
         if (!account) return null;
+        connector = active;
         wallet = restored.wallet;
         return {accountId:account.accountId,publicKey:account.publicKey ?? null,walletId:wallet.manifest.id,walletName:wallet.manifest.name};
       } catch { return null; }
     },
 
-    async connect(): Promise<WalletConnection> {
+    async connect(walletId?: "trezu-wallet"): Promise<WalletConnection> {
       try {
-        const active = await getConnector();
-        const connected = await active.connect();
+        if (walletId === "trezu-wallet" && options.network !== "mainnet") throw new Error("Trezu Wallet is available on Mainnet only.");
+        const active = await getConnector(!walletId);
+        connector = active;
+        const connected = await active.connect(walletId ? { walletId } : undefined);
         const accounts = await connected.getAccounts();
         const account = accounts[0];
         if (!account) {
@@ -213,9 +222,10 @@ export function createConnectorWalletGateway(
 
     dispose() {
       disposed = true;
-      connector?.off("wallet:signOut", handleSignOut);
+      for (const [instance, listener] of connectors) instance.off("wallet:signOut", listener);
+      connectors.clear();
       connector = null;
-      connectorPromise = null;
+      connectorPromises.clear();
       wallet = null;
       signOutListeners.clear();
     },

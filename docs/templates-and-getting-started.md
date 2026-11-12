@@ -2,7 +2,7 @@
 
 > **Temporary implementation plan — DELETE WHEN DONE.** Keep this file as the central checklist for this feature. Once implementation and acceptance are complete, move lasting behavior and relevant limits into README, decisions and implementation status, then delete this file. Do not delete it while acceptance is still pending.
 
-Created: 2026-11-12. Status: planned; implementation has not started.
+Created: 2026-11-12. Status: implemented; user interaction and visual acceptance pending.
 
 ## Goal and scope
 
@@ -62,13 +62,13 @@ Opening, recalculating or refreshing any example must never sign or submit. Keep
 
 These are internal implementation steps, not separate release milestones.
 
-- [ ] Inspect current workspace startup/switching, workbook snapshot construction and existing document tests.
-- [ ] Implement catalog/factories and workspace creation with independent IDs and preserved pending edits.
-- [ ] Build the tutorial and three template workbooks, checking formulas against the current catalog.
-- [ ] Add the template picker and both File entry points.
-- [ ] Add welcome eligibility and dismissal persistence after startup is ready.
-- [ ] Complete focused verification and record any pending user inspection here.
-- [ ] Update durable documentation to describe delivered behavior and actual limits.
+- [x] Inspect current workspace startup/switching, workbook snapshot construction and existing document tests.
+- [x] Implement catalog/factories and workspace creation with independent IDs and preserved pending edits.
+- [x] Build the tutorial and three template workbooks, checking formulas against the current catalog.
+- [x] Add the template picker and both File entry points.
+- [x] Add welcome eligibility and dismissal persistence after startup is ready.
+- [x] Complete focused verification and record any pending user inspection here.
+- [x] Update durable documentation to describe delivered behavior and actual limits.
 - [ ] After acceptance is complete, delete this file.
 
 ## Acceptance and verification
@@ -83,4 +83,14 @@ These are internal implementation steps, not separate release milestones.
 
 ## Progress and remaining acceptance
 
-Documentation only. No feature implementation or verification has been performed yet.
+Implemented the shared catalog, guided workbook, three templates, File entries, picker and welcome. Welcome uses successful empty-repository startup plus editor readiness, with a separate best-effort local preference and in-session dismissal. Returning documents and storage-error startup do not trigger it. No document schema change or template-origin metadata was needed.
+
+Template creation persists pending edits and the new document before switching; a second settlement captures edits made during the new document's write. Requests are guarded against duplicate creation. Focused verification exposed a synchronous no-change-save bug that left a resolved promise in flight; the persistence bridge now assigns that promise before its body can complete. This fix is needed for the second settlement to preserve edits.
+
+The account total uses guarded arithmetic because pinned Univer's SUM treated a connection-error cell as zero in the engine check. The source read keeps its specific error and diagnostics; dependent arithmetic may show Univer's generic #VALUE! error. Empty copies make no external requests. Payment amount inputs retain text formatting and exact text values through native save/reopen.
+
+Focused tests: 40 passed in `tests/templates.test.ts` and `tests/document-persistence.test.ts`, covering independent identities, ordinary JSON round-trips, native save/reopen, offline tutorial calculation, empty guards, mocked balance/token reads and failures, proposal spills, exact amount references, welcome startup/preference behavior, duplicate requests and failed storage/pending-edit preservation.
+
+`pnpm typecheck` and `pnpm build` passed. Build retains the existing browser externalization (`util`) and large-chunk warnings. No new dependencies were added.
+
+Pending user inspection: welcome choices and dismissal; Tab/Shift+Tab/Escape and focus restoration in welcome/picker; template preview and workbook legibility at normal/narrow widths; copying B11 to B15 in the tutorial; DAO spill space; selecting prepared transfers and finding Blockchain → Review actions. No browser, server, wallet signing or live-service tests were run. Keep this plan until those acceptance checks are confirmed.

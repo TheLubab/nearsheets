@@ -23,6 +23,7 @@ interface FakeAccount {
 interface FakeConnector {
   network: NearNetwork;
   excludedWallets: string[];
+  connectInput?: { walletId: string };
   events: Map<string, Set<() => void>>;
   disconnect: ReturnType<typeof vi.fn>;
 }
@@ -44,6 +45,7 @@ vi.mock("@hot-labs/near-connect", () => ({
   NearConnector: class {
     network: NearNetwork;
     excludedWallets: string[];
+    connectInput?: { walletId: string };
     events = new Map<string, Set<() => void>>();
     disconnect = vi.fn(async () => undefined);
 
@@ -69,7 +71,8 @@ vi.mock("@hot-labs/near-connect", () => ({
       }
     }
 
-    async connect() {
+    async connect(input?: { walletId: string }) {
+      this.connectInput = input;
       await behavior.connect();
       return {
         manifest: { id: "meteor", name: "Meteor Wallet" },
@@ -115,7 +118,22 @@ describe("connector wallet gateway", () => {
       walletName: "Meteor Wallet",
     });
     expect(connectorRef.current?.network).toBe("testnet");
-    expect(connectorRef.current?.excludedWallets).toEqual(expect.arrayContaining(["ledger", "ethereum-wallets", "wallet-connect", "passkey"]));
+    expect(connectorRef.current?.excludedWallets).toEqual(expect.arrayContaining(["ledger", "ethereum-wallets", "wallet-connect", "passkey", "trezu-wallet"]));
+  });
+
+  it("connects Trezu directly on mainnet and keeps it out of the general selector", async () => {
+    const gateway = createConnectorWalletGateway({ network: "mainnet", config });
+    await gateway.connect("trezu-wallet");
+    expect(connectorRef.current?.connectInput).toEqual({ walletId: "trezu-wallet" });
+    expect(connectorRef.current?.excludedWallets).not.toContain("trezu-wallet");
+    gateway.dispose();
+  });
+
+  it("rejects a Trezu connection on testnet", async () => {
+    const gateway = createConnectorWalletGateway({ network: "testnet", config });
+    await expect(gateway.connect("trezu-wallet")).rejects.toThrow("Mainnet only");
+    expect(connectorRef.current).toBeNull();
+    gateway.dispose();
   });
 
   it("passes the selected network rather than the configured default", async () => {

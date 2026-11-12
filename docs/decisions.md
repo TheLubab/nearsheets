@@ -11,6 +11,7 @@ NearSheets is a NEAR table interface for professional spreadsheet users. Blockch
 - Trezu is a separate platform, an integration and implementation reference. Use its name only when referring to that platform. Do not prefix general formulas with `TREZU_` or put Sputnik adapters under a Trezu namespace.
 - User-written formulas, custom blockchain functions and structured action drafts are core features. A function that only produces an ID is not an action-draft implementation.
 - The grid is the primary working surface. Contextual dialogs/popovers may support connection, argument entry, inspection and explicit execution. Permanent treasury dashboards outside the grid do not satisfy the product.
+- Onboarding uses an editable getting-started workbook and three local templates (account balances, DAO proposals and contributor payments). File exposes both entry points. Welcome is eligible only after successful startup from an empty repository and editor readiness; dismissal is separate from workbook storage. Templates create independent ordinary v3 documents, with no origin metadata or schema migration. They demonstrate existing functions and never determine execution eligibility. Tours, remote catalogs and community/cross-chain templates are outside this feature.
 - Premium UI: use established accessible component patterns, preferably shadcn/ui for the application chrome, with consistent tokens shared with Univer. Preserve spreadsheet keyboard behavior and density. Do not invent a bespoke collection of controls or a decorative dashboard.
 
 ## Agreed stack

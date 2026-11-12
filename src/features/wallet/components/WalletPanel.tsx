@@ -1,5 +1,6 @@
 import { WalletIcon } from "@solar-icons/react/linear/wallet";
 import { AltArrowDownIcon } from "@solar-icons/react/linear/alt-arrow-down";
+import { flushSync } from "react-dom";
 import { NEAR_NETWORKS, type NearNetwork } from "../../../integrations/near/network";
 import type { WalletState, WalletController } from "../application/wallet-controller";
 
@@ -38,16 +39,24 @@ export function WalletPanel({ wallet, state }: WalletPanelProps) {
           <span className="wallet-panel__wallet">{connection.walletName}</span>
         </div>
       ) : (
-        <button type="button" className="wallet-panel__choice" onClick={() => void wallet.connect()} disabled={busy}>
-          <img className="wallet-panel__near-icon" src={`${import.meta.env.BASE_URL}near-wallet-mark.svg`} alt="" />
-          <span className="wallet-panel__choice-title">{status === "connecting" ? "Opening wallet selector…" : "NEAR wallets"}</span>
-        </button>
+        <div className="wallet-panel__choices">
+          <button type="button" className="wallet-panel__choice" onClick={() => flushSync(() => { void wallet.connect(); })} disabled={busy}>
+            <img className="wallet-panel__near-icon" src={`${import.meta.env.BASE_URL}near-wallet-mark.svg`} alt="" />
+            <span className="wallet-panel__choice-title">NEAR wallets</span>
+          </button>
+          {false && <button type="button" className="wallet-panel__choice" onClick={() => flushSync(() => { void wallet.connect("trezu-wallet"); })} disabled={busy || network !== "mainnet"}>
+            <img className="wallet-panel__trezu-icon" src={`${import.meta.env.BASE_URL}trezu-wallet-mark.svg`} alt="" />
+            <span className="wallet-panel__choice-title">Trezu Wallet</span>
+            {network !== "mainnet" ? <span className="wallet-panel__availability">Mainnet only</span> : null}
+          </button>}
+          {status === "connecting" ? <span className="wallet-panel__progress" role="status">Connecting…</span> : null}
+        </div>
       )}
 
       {cancelled ? (
         <div className="wallet-panel__notice" role="status">
           <span>Wallet selection cancelled.</span>
-          <button type="button" onClick={() => wallet.dismissCancelled()}>Dismiss</button>
+          <button type="button" onClick={() => wallet.clearFeedback()}>Dismiss</button>
         </div>
       ) : null}
       {error ? <p className="wallet-panel__error" role="alert">{error}</p> : null}

@@ -2,6 +2,12 @@ import { Dialog } from '../../../components/ui/dialog';
 import * as Menubar from '@radix-ui/react-menubar';
 import type { ReactNode } from 'react';
 import { FolderOpenIcon } from '@solar-icons/react/linear/folder-open';
+import { AddSquareIcon } from '@solar-icons/react/linear/add-square';
+import { ImportIcon } from '@solar-icons/react/linear/import';
+import { DownloadIcon } from '@solar-icons/react/linear/download';
+import { FileTextIcon } from '@solar-icons/react/linear/file-text';
+import { PenIcon } from '@solar-icons/react/linear/pen';
+import { InfoCircleIcon } from '@solar-icons/react/linear/info-circle';
 import { DocumentPicker } from './DocumentPicker';
 import { useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
@@ -15,6 +21,8 @@ interface DocumentBarProps {
   state: WorkspaceState;
   children?:ReactNode;
   ribbonMenu?: boolean;
+  onTemplates(): void;
+  onGettingStarted(): void;
 }
 
 function formatSavedAt(iso: string | null): string {
@@ -32,7 +40,7 @@ function formatSavedAt(iso: string | null): string {
  * Document-level actions, deliberately separate from the sheet surface:
  * saving is automatic, while new/rename/export/import are explicit.
  */
-export function DocumentBar({ workspace, state, children, ribbonMenu }: DocumentBarProps) {
+export function DocumentBar({ workspace, state, children, ribbonMenu, onTemplates, onGettingStarted }: DocumentBarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -145,7 +153,7 @@ export function DocumentBar({ workspace, state, children, ribbonMenu }: Document
             {document?.title ?? "Opening document…"}
           </button>
         )}
-        <button className="document-bar__open" type="button" aria-label="Open a saved workbook" title="Open a saved workbook" onClick={()=>setPickerOpen(true)}><FolderOpenIcon size={16}/></button>
+        <button className="document-bar__open" type="button" aria-label="Open a saved nearsheet" title="Open a saved nearsheet" onClick={()=>setPickerOpen(true)}><FolderOpenIcon size={16}/></button>
         <span
           className={`document-bar__save document-bar__save--${state.saveStatus}`}
           role="status"
@@ -159,25 +167,26 @@ export function DocumentBar({ workspace, state, children, ribbonMenu }: Document
 
     <Menubar.Root className={'app-menubar'+(ribbonMenu ? ' app-menubar--ribbon' : '')}>
       <Menubar.Menu><Menubar.Trigger data-document-menu-trigger>File</Menubar.Trigger><Menubar.Portal><Menubar.Content className="menu-content" align="start" sideOffset={3}>
-        <Menubar.Item className="menu-item" onSelect={()=>void workspace.createNewDocument()}>New workbook</Menubar.Item>
-        <Menubar.Item className="menu-item" onSelect={()=>setPickerOpen(true)}>Open…</Menubar.Item>
-        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>{setRenameValue(document?.title??'');setIsRenaming(true);}}>Rename</Menubar.Item>
-        <Menubar.Item className="menu-item" onSelect={handleImportClick}>Import…</Menubar.Item>
+        <Menubar.Item className="menu-item" onSelect={()=>void workspace.createNewDocument()}><AddSquareIcon size={16}/>New</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={state.status !== 'ready'} onSelect={onTemplates}><FileTextIcon size={16}/>New from template</Menubar.Item>
+        <Menubar.Item className="menu-item" onSelect={()=>setPickerOpen(true)}><FolderOpenIcon size={16}/>Open</Menubar.Item>
+        <Menubar.Item className="menu-item" onSelect={handleImportClick}><ImportIcon size={16}/>Import</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>{setRenameValue(document?.title??'');setIsRenaming(true);}}><PenIcon size={16}/>Rename</Menubar.Item>
         <Menubar.Separator className="menu-separator"/>
-        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportJson()}>Download JSON workbook</Menubar.Item>
-        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportCsv()}>Download CSV (underlying values)</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportJson()}><DownloadIcon size={16}/>Export as JSON</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportCsv()}><DownloadIcon size={16}/>Export as CSV (underlying values)</Menubar.Item>
         <Menubar.Separator className="menu-separator"/>
-        <Menubar.Item className="menu-item" onSelect={()=>setAboutOpen(true)}>About NearSheets</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={state.status !== 'ready'} onSelect={onGettingStarted}><FileTextIcon size={16}/>Getting started</Menubar.Item>
+        <Menubar.Item className="menu-item" onSelect={()=>setAboutOpen(true)}><InfoCircleIcon size={16}/>About NearSheets</Menubar.Item>
       </Menubar.Content></Menubar.Portal></Menubar.Menu>
       {children}
     </Menubar.Root>
     <input ref={fileInputRef} type="file" accept=".json,.csv,application/json,text/csv" className="document-bar__file" onChange={event=>void handleFileChosen(event)}/>
     <Dialog open={aboutOpen} onOpenChange={setAboutOpen} title="About NearSheets" description="A spreadsheet interface for NEAR.">
-      <p>Workbooks are stored locally in your browser.</p>
+      <p>Nearsheets are stored locally in your browser.</p>
       <p>Solar icons by <a href="https://www.figma.com/community/file/1166831539721848736" target="_blank" rel="noreferrer">480 Design</a>, used under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. React components by <a href="https://solar-icons.dev" target="_blank" rel="noreferrer">Solar Icons</a>.</p>
     </Dialog>
     <DocumentPicker workspace={workspace} open={pickerOpen} onOpenChange={setPickerOpen}/>
-    {state.notice&&<div className={'document-bar__notice document-bar__notice--'+state.notice.kind} role={state.notice.kind==='error'?'alert':'status'}><span>{state.notice.message}</span><button aria-label="Dismiss message" onClick={()=>workspace.dismissNotice()}>×</button></div>}
     {state.saveStatus==='error'&&state.saveError&&<p className="document-bar__error" role="alert">{state.saveError} Download JSON from File to keep a copy.</p>}
   </div>;
 }

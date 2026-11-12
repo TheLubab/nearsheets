@@ -14,6 +14,8 @@ import { useWalletState } from '../features/wallet/application/use-wallet-state'
 import { WalletPanel } from '../features/wallet/components/WalletPanel';
 import type { WorkbookSession } from '../features/spreadsheet/univer/create-workbook-session';
 import { useIntegrations } from './app-providers';
+import { TemplateDialogs } from '../features/templates/TemplateDialogs';
+import { createWelcomePreference } from '../features/templates/welcome-preference';
 
 export function App() {
   const [repository] = useState(()=>new DexieDocumentRepository());
@@ -24,6 +26,18 @@ export function App() {
   const [accountOpen,setAccountOpen]=useState(false);
   const [readyEditor,setReadyEditor]=useState<{documentId:string;session:WorkbookSession}|null>(null);
   const activeSession=readyEditor?.documentId===state.document?.documentId?readyEditor?.session??null:null;
+  const [welcomePreference] = useState(() => createWelcomePreference());
+  const [templateView, setTemplateView] = useState<'welcome' | 'templates' | null>(null);
+  const welcomeConsidered = useRef(false);
+  useEffect(() => {
+    if (welcomeConsidered.current || state.status !== 'ready' || !activeSession) return;
+    welcomeConsidered.current = true;
+    if (state.isNewWorkspace && state.saveStatus !== 'error' && !welcomePreference.isDismissed()) setTemplateView('welcome');
+  }, [state.status, state.isNewWorkspace, state.saveStatus, activeSession, welcomePreference]);
+  const changeTemplateView = (view: 'welcome' | 'templates' | null) => {
+    if (templateView === 'welcome') welcomePreference.dismiss();
+    setTemplateView(view);
+  };
   const generation = useRef(0);
   useEffect(()=>{
     const mounted = ++generation.current;
@@ -58,19 +72,20 @@ export function App() {
     <TableActions key={state.document?.documentId} workspace={workspace} wallet={wallet} activeSession={activeSession}>
     <header className="app-shell__header">
       <h1 className="brand" title="NearSheets"><img className="brand__mark" src={`${import.meta.env.BASE_URL}near-sheets-mark.svg`} width={32} height={27} alt=""/><span>NearSheets</span></h1>
-      <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document}/>
-      <button type="button" className={`account-control ${walletState.connection ? 'account-control--connected' : 'account-control--connect'}`} onClick={()=>setAccountOpen(true)} aria-label={walletState.connection ? `Wallet account ${walletState.connection.accountId}` : 'Sign In'} title={walletState.connection?.accountId}>
+      <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document} onTemplates={() => changeTemplateView('templates')} onGettingStarted={() => { void workspace.createFromTemplate('getting-started'); }}/>
+      <button type="button" className={`account-control ${walletState.connection ? 'account-control--connected' : 'account-control--connect'}`} onClick={()=>{wallet.clearFeedback();setAccountOpen(true);}} aria-label={walletState.connection ? `Wallet account ${walletState.connection.accountId}` : 'Sign In'} title={walletState.connection?.accountId}>
         {walletState.connection ? <WalletIcon size={16} aria-hidden="true"/> : null}
         <span>{walletState.connection?.accountId ?? (walletState.status === 'connecting' ? 'Connecting…' : 'Sign In')}</span>
         {walletState.connection ? <span className="account-control__status" aria-hidden="true"/> : null}
       </button>
-      <Dialog className="account-dialog" open={accountOpen} onOpenChange={setAccountOpen} title={walletState.connection ? 'Your account' : 'Continue with'} showClose={false}><WalletPanel wallet={wallet} state={walletState}/></Dialog>
+      <Dialog className="account-dialog" open={accountOpen} onOpenChange={open=>{if(!open)wallet.clearFeedback();setAccountOpen(open);}} title={walletState.connection ? 'Your account' : 'Continue with'} showClose={false} suspendModal={walletState.status === 'connecting'}><WalletPanel wallet={wallet} state={walletState}/></Dialog>
     </header>
     <main className="app-shell__main">
       {state.status === 'ready' && state.document ? <WorkbookEditor key={state.document.documentId} documentId={state.document.documentId} initialWorkbook={state.document.workbook} executions={state.document.executions} onSessionReady={(session,id)=>{workspace.attachSession(session,id);setReadyEditor({documentId:id,session});}}/> : null}
       {state.status === 'error' ? <div className="workbook-status" role="alert">{state.notice?.message ?? 'Documents could not be opened.'}</div> : null}
     </main>
     </TableActions>
+    <TemplateDialogs workspace={workspace} view={templateView} onViewChange={changeTemplateView}/>
     <Toaster/>
   </div>;
 }

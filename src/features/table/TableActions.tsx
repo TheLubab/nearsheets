@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { ReactNode } from 'react';
 import { BLOCKCHAIN_TOOLS,ribbonCommandId } from '../spreadsheet/univer/blockchain-ribbon';
 import type { WorkbookSession } from '../spreadsheet/univer/create-workbook-session';
@@ -102,7 +103,7 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
     <Dialog open={help} onOpenChange={setHelp} title={functionHelp[initialFunction]?.title ?? 'Insert a function'} description={`${functionHelp[initialFunction]?.description ?? 'Fill in the arguments and insert the formula.'} Use =A1 to reference a cell.`}>
       <FunctionArguments key={initialFunction} functionName={initialFunction} target={insertTarget?.getA1Notation()??'the selected cell'} onInsert={formula=>{insertTarget?.setValue({f:formula});setHelp(false);}}/>
     </Dialog>
-    <Dialog open={Boolean(plan)} onOpenChange={open=>{if(!busy&&!open)setPlan(null);}} title="Review exact execution" description="Each action is a separate wallet request. A confirmed proposal or vote is not a completed payment. Changes require a new review.">
+    <Dialog open={Boolean(plan)} onOpenChange={open=>{if(!busy&&!open)setPlan(null);}} title="Review exact execution" description="Each action is a separate wallet request. A confirmed proposal or vote is not a completed payment. Changes require a new review." suspendModal={busy}>
       {plan?.operations.map(op=><section className="operation-preview" key={op.id}>
         <h3>{op.kind === 'SPUTNIK_VOTE' ? 'Sputnik vote' : `${op.kind.replace('SPUTNIK_','').replace('INTENTS_','')} · ${op.amount} ${op.asset} → ${op.recipient}`}</h3>
         <dl><dt>Source DAO</dt><dd>{op.source}</dd><dt>Network / signer</dt><dd>{op.network} / {plan.account}</dd>
@@ -115,7 +116,7 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
       {error && <ProblemNotice problem={error}/>}
       <button disabled={busy} onClick={async()=>{
         const current = session();if(!plan||!current?.tableRuntime)return;
-        setBusy(true);setError(null);
+        flushSync(()=>setBusy(true));setError(null);
         try {
           await executePlan({plan,wallet,runtime:current.tableRuntime,snapshot:()=>current.saveSnapshot(),journal:()=>workspace.getState().document?.executions ?? {},record:record=>workspace.recordExecution(record,owner ?? undefined)});
           current.tableRuntime.executions = workspace.getState().document?.executions ?? {};

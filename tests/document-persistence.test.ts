@@ -478,3 +478,70 @@ describe("document workspace", () => {
     expect(workspace.getState().document).toBe(original);
   });
 });
+describe('template creation preserves documents', () => {
+  const setup = async () => {
+    const repository = new MemoryDocumentRepository();
+    const workspace = createDocumentWorkspace({ repository, treasury });
+    await workspace.start();
+    const original = workspace.getState().document!;
+    const editor = sessionWithWorkbook(original.workbook);
+    workspace.attachSession(editor.session, original.documentId);
+    return { repository, workspace, original, editor };
+  };
+
+  it('saves pending edits before opening an independent template copy', async () => {
+    const f = await setup();
+    try {
+      f.editor.edit({ name: 'Pending edits' });
+      expect(await f.workspace.createFromTemplate('account-balances')).toBe(true);
+      expect((await f.repository.get(f.original.documentId))?.workbook.name).toBe('Pending edits');
+      expect(f.workspace.getState().document?.documentId).not.toBe(f.original.documentId);
+      expect(f.editor.listenerCount()).toBe(0);
+    } finally { f.workspace.dispose(); }
+  });
+
+  it('keeps the current editor and export when pending edits cannot be saved', async () => {
+    const f = await setup();
+    try {
+      f.editor.edit({ name: 'Unsaved work' });
+      vi.spyOn(f.repository, 'save').mockRejectedValue(new Error('Disk full'));
+      expect(await f.workspace.createFromTemplate('getting-started')).toBe(false);
+      expect(f.workspace.getState().document?.documentId).toBe(f.original.documentId);
+      expect(f.editor.listenerCount()).toBe(1);
+      expect(await f.workspace.exportJson()).toContain('Unsaved work');
+      expect(await f.repository.list()).toHaveLength(1);
+    } finally { f.workspace.dispose(); }
+  });
+
+  it('keeps current work when saving the template fails', async () => {
+    const f = await setup();
+    try {
+      vi.spyOn(f.repository, 'save').mockRejectedValue(new Error('Template storage unavailable'));
+      expect(await f.workspace.createFromTemplate('contributor-payments')).toBe(false);
+      expect(f.workspace.getState().notice?.message).toContain('Template storage unavailable');
+      expect(f.workspace.getSession()).toBe(f.editor.session);
+      expect(await f.repository.list()).toHaveLength(1);
+    } finally { f.workspace.dispose(); }
+  });
+
+  it('ignores duplicate creation requests and settles edits made during template persistence', async () => {
+    const f = await setup();
+    try {
+      const save = f.repository.save.bind(f.repository);
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      vi.spyOn(f.repository, 'save').mockImplementation(async document => {
+        if (document.documentId !== f.original.documentId) await gate;
+        await save(document);
+      });
+      const first = f.workspace.createFromTemplate('dao-proposals');
+      await vi.waitFor(() => expect(f.repository.save).toHaveBeenCalled());
+      expect(await f.workspace.createFromTemplate('dao-proposals')).toBe(false);
+      f.editor.edit({ name: 'Edited during save' });
+      release();
+      expect(await first).toBe(true);
+      expect((await f.repository.get(f.original.documentId))?.workbook.name).toBe('Edited during save');
+      expect(await f.repository.list()).toHaveLength(2);
+    } finally { f.workspace.dispose(); }
+  });
+});

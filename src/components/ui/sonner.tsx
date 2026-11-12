@@ -18,11 +18,12 @@ export function Toaster() {
       id={APP_TOASTER_ID}
       className="app-toaster"
       theme="light"
+      expand
       position="bottom-right"
       offset={{ bottom: 52, right: 16 }}
       mobileOffset={{ bottom: 52, left: 12, right: 12 }}
       gap={8}
-      visibleToasts={3}
+      visibleToasts={5}
       toastOptions={{
         classNames: { toast: "app-toast" },
       }}
