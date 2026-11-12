@@ -1,3 +1,5 @@
+import { ReadBindings } from './read-bindings';
+import type { CalculationContext } from './read-bindings';
 import { env } from '../../config/env';
 import { OneClick } from '../../integrations/intents/one-click';
 import type { QuoteInput } from '../../integrations/intents/one-click';
@@ -30,7 +32,7 @@ export interface Operation {
   proposal?: unknown;
   intents?: {input:QuoteInput; stage:'estimated'|'prepared'; quote:unknown; expiresAt:string; depositAddress?:string; providerId:string};
 }
-export interface ReadEvidence { network: NearNetwork; fetchedAt: string; value: unknown }
+export interface ReadEvidence { network: NearNetwork; fetchedAt: string; value: unknown; stale?:boolean }
 export interface TablePorts {
   view(network: NearNetwork, contract: string, method: string, args: Record<string, unknown>): Promise<unknown>;
   transaction?(network: NearNetwork, hash: string, signer: string): Promise<unknown>;
@@ -66,29 +68,14 @@ const positiveAmount = (value: unknown, decimals: number) => {
   if (parsed.amount.baseUnits === '0') throw invalidInput('An action amount must be positive.');
   return parsed.amount;
 };
-export const TABLE_FUNCTIONS = [
-  ['SPUTNIK_CALL', 'reference, dao, contract, method, JSON args, gas units, attached NEAR, network', '=SPUTNIK_CALL("call-1","dao.sputnikv2.testnet","app.testnet","method","{}","50000000000000","0","testnet")'],
-  ['SPUTNIK_STAKE', 'reference, dao, staking pool, exact NEAR amount, network', '=SPUTNIK_STAKE("stake-1","dao.sputnikv2.testnet","validator.pool.f863973.m0","1","testnet")'],
-  ['INTENTS_SWAP', 'reference, dao, origin asset, output asset, exact amount, output chain, recipient, refund DAO, slippage bps, network', '=INTENTS_SWAP("swap-1","dao.sputnik-dao.near","nep141:wrap.near","output-asset-id","1","eth","0x0000000000000000000000000000000000000001","dao.sputnik-dao.near",100,"mainnet")'],
-  ['INTENTS_QUOTE', 'origin asset ID, output asset ID, exact amount, output chain, recipient, refund address, slippage bps', '=INTENTS_QUOTE("origin-asset-id","output-asset-id","1","eth","0x0000000000000000000000000000000000000001","alice.near",100)'],
-  ['NEAR_BALANCE', 'account, network', '=NEAR_BALANCE("alice.testnet","testnet")'],
-  ['FT_BALANCE', 'token, account, network', '=FT_BALANCE("wrap.testnet","alice.testnet","testnet")'],
-  ['NEAR_BALANCE_EXACT', 'account, network', '=NEAR_BALANCE_EXACT("alice.testnet","testnet")'],
-  ['FT_BALANCE_EXACT', 'token, account, network', '=FT_BALANCE_EXACT("wrap.testnet","alice.testnet","testnet")'],
-  ['NEAR_VIEW', 'contract, method, JSON arguments, network', '=NEAR_VIEW("dao.sputnikv2.testnet","get_last_proposal_id","{}","testnet")'],
-  ['SPUTNIK_PROPOSALS', 'dao, network', '=SPUTNIK_PROPOSALS("dao.sputnikv2.testnet","testnet")'],
-  ['SPUTNIK_TRANSFER', 'reference, dao, recipient, exact amount, asset (near or token contract), network', '=SPUTNIK_TRANSFER("invoice-1","dao.sputnikv2.testnet","alice.testnet","1.25","near","testnet")'],
-  ['SPUTNIK_VOTE', 'reference, dao, proposal id, decision, network', '=SPUTNIK_VOTE("vote-1","dao.sputnikv2.testnet",0,"VoteApprove","testnet")'],
-  ['INTENTS_STATUS', 'swap action cell', '=INTENTS_STATUS(A1)'],
-  ['NS_RECEIPT', 'action cell', '=NS_RECEIPT(A1)'],
-  ['NS_STATUS', 'action cell', '=NS_STATUS(A1)'],
-  ['NS_FIELD', 'draft cell, field name', '=NS_FIELD(A1,"amount")'],
-] as const;
+export { TABLE_FUNCTIONS } from './function-registry';
+import { TABLE_FUNCTIONS } from './function-registry';
 
 /** One runtime per workbook. It has no signing capability. */
 export class TableRuntime {
   executions: ExecutionJournal = {};
   calculating = true;
+  readonly bindings = new ReadBindings();
   readonly diagnostics = new CellDiagnostics();
   readonly operations = new Map<string, Operation>();
   readonly evidence = new Map<string, ReadEvidence>();
@@ -97,8 +84,9 @@ export class TableRuntime {
   requestVersion() { return this.epoch; }
   accept(version:number) { if(this.disposed || this.epoch!==version)throw staleData('Read superseded. Refresh the cell.'); }
   constructor(readonly ports: TablePorts = rpcPorts, readonly query = new QueryClient(), readonly intents:OneClick|null = env.VITE_INTENTS_API_URL ? new OneClick(env.VITE_INTENTS_API_URL) : null) {}
-  async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}) {
+  async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}, context?:CalculationContext) {
     const key = [network, contract, method, args];
+    context?.keys.add(JSON.stringify(key));
     const epoch = this.epoch;
     const value = await this.query.fetchQuery({queryKey: key, staleTime: 30_000,
       queryFn: async () => {
@@ -109,7 +97,21 @@ export class TableRuntime {
     this.evidence.set(JSON.stringify(key), {network, value, fetchedAt: new Date(this.query.getQueryState(key)?.dataUpdatedAt ?? Date.now()).toISOString()});
     return value;
   }
-  async calculate(name: string, args: unknown[]): Promise<TableResult> {
+  async cached<T>(key:readonly unknown[],queryFn:()=>Promise<T>,staleTime:number,context?:CalculationContext):Promise<T> {
+    context?.keys.add(JSON.stringify(key));const version=this.epoch;
+    const value=await this.query.fetchQuery({queryKey:key,queryFn,staleTime});this.accept(version);
+    this.evidence.set(JSON.stringify(key),{network:key[0]==='testnet'?'testnet':'mainnet',value,fetchedAt:new Date(this.query.getQueryState(key)?.dataUpdatedAt??Date.now()).toISOString()});return value;
+  }
+  async calculate(name:string,args:unknown[],context?:CalculationContext):Promise<TableResult> {
+    const version=this.epoch;
+    const result=await this.calculateValue(name,args,context);this.accept(version);
+    if(context) {if(!this.bindings.current(context))throw staleData('Cell calculation superseded.');context.rows=Array.isArray(result)?result.length:1;context.columns=Array.isArray(result)?result[0]?.length??1:1;}
+    return result;
+  }
+  private async calculateValue(name: string, args: unknown[], context?:CalculationContext): Promise<TableResult> {
+    const version=this.epoch;
+    const read=(network:NearNetwork,contract:string,method:string,args:Record<string,unknown>={})=>this.read(network,contract,method,args,context);
+    const accept=()=>{this.accept(version);if(context&&!this.bindings.current(context))throw staleData('Cell calculation superseded.');};
     if (this.disposed) throw new Error('Workbook closed.');
     args=args.map(value=>Array.isArray(value)&&value.length===1&&Array.isArray(value[0])&&value[0].length===1?value[0][0]:value);
     const signature=TABLE_FUNCTIONS.find(entry=>entry[0]===name);
@@ -123,7 +125,7 @@ export class TableRuntime {
       const prior = JSON.parse(record.revision) as Operation;
       if (!prior.intents?.depositAddress) throw new Error('No prepared Intents deposit is recorded.');
       if (!this.intents) throw unavailable('Intents is not configured.');
-      const result = await this.intents.status(prior.intents.depositAddress);
+      const result = await this.cached(['intents-status',prior.intents.depositAddress],()=>this.intents!.status(prior.intents!.depositAddress!),5000,context);
       return [['Provider stage','Updated at','Details'],[result.status,result.updatedAt,JSON.stringify(result.swapDetails ?? {})]];
     }
     if (name === 'NS_STATUS') {
@@ -143,7 +145,7 @@ export class TableRuntime {
     if (name === 'INTENTS_QUOTE') {
       if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input = {originAsset:text(args[0]),destinationAsset:text(args[1]),amount:text(args[2]),destinationChain:text(args[3]),recipient:text(args[4]),refundTo:text(args[5]),slippageTolerance:Number(args[6])};
-      const quote = await this.query.fetchQuery({queryKey:['intents-estimate',input],staleTime:5000,queryFn:()=>this.intents!.estimate(input)});
+      const quote = await this.cached(['intents-estimate',input],()=>this.intents!.estimate(input),5000,context);
       if (Date.parse(quote.response.quote.deadline) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
       const amounts = quote.response.quote;
       return [['Estimate · no funding instructions','Value','Token / unit'],
@@ -163,22 +165,22 @@ export class TableRuntime {
     const network = checkedNetwork.data;
     if (name === 'NEAR_BALANCE' || name === 'NEAR_BALANCE_EXACT') {
       const id = account(args[0]);
-      const units = await this.query.fetchQuery({queryKey: [network,id,'balance'], staleTime:30_000, queryFn: async () => {
+      const units = await this.cached([network,id,'balance'], async () => {
         try { return await this.ports.balance(network,id); }
         catch(cause) { throw readProblem(cause,network,id); }
-      }});
+      },30_000,context);
       const amount = amountFromBaseUnits(units,24);
       if (!amount) throw new Error('Invalid native balance.');
-      this.evidence.set(JSON.stringify([network,id,'balance']), {network, fetchedAt: new Date(this.query.getQueryState([network,id,'balance'])?.dataUpdatedAt ?? Date.now()).toISOString(), value: {...amount, asset:'near', symbol:'NEAR', account:id, numericValueIsApproximate:true}});
+      accept();this.evidence.set(JSON.stringify([network,id,'balance']), {network, fetchedAt: new Date(this.query.getQueryState([network,id,'balance'])?.dataUpdatedAt ?? Date.now()).toISOString(), value: {...amount, asset:'near', symbol:'NEAR', account:id, numericValueIsApproximate:true}});
       return name === 'NEAR_BALANCE_EXACT' ? amount.display : Number(amount.display);
     }
     if (name === 'FT_BALANCE' || name === 'FT_BALANCE_EXACT') {
       const token = account(args[0]), owner = account(args[1]);
-      const metadata = metadataSchema.parse(await this.read(network,token,'ft_metadata'));
-      const units = z.string().regex(/^\d+$/).parse(await this.read(network,token,'ft_balance_of',{account_id:owner}));
+      const metadata = metadataSchema.parse(await read(network,token,'ft_metadata'));
+      const units = z.string().regex(/^\d+$/).parse(await read(network,token,'ft_balance_of',{account_id:owner}));
       const amount = amountFromBaseUnits(units,metadata.decimals)!;
       const balanceKey = [network,token,'ft_balance_of',{account_id:owner}];
-      this.evidence.set(JSON.stringify(balanceKey), {
+      accept();this.evidence.set(JSON.stringify(balanceKey), {
         network,
         fetchedAt: new Date(this.query.getQueryState(balanceKey)?.dataUpdatedAt ?? Date.now()).toISOString(),
         value: {...amount, asset:token, symbol:metadata.symbol, name:metadata.name, account:owner, numericValueIsApproximate:true},
@@ -186,7 +188,7 @@ export class TableRuntime {
       return name === 'FT_BALANCE_EXACT' ? amount.display : Number(amount.display);
     }
     if (name === 'NEAR_VIEW') {
-      const result = await this.read(network,account(args[0]),text(args[1]),jsonArgs(args[2]));
+      const result = await read(network,account(args[0]),text(args[1]),jsonArgs(args[2]));
       if (Array.isArray(result)) {
         if (result.length === 0) return [['No records']];
         if (result.every(item => item && typeof item === 'object' && !Array.isArray(item))) {
@@ -201,13 +203,13 @@ export class TableRuntime {
     if (name === 'SPUTNIK_PROPOSALS') {
       const dao = account(args[0]);
       const proposals = z.array(z.object({id:z.number().int(),description:z.string(),status:z.string(),proposer:z.string()})).parse(
-        await this.read(network,dao,'get_proposals',{from_index:0,limit:100}));
+        await read(network,dao,'get_proposals',{from_index:0,limit:100}));
       return [['ID','Description','Status','Proposer'],...proposals.map(p => [p.id,p.description,p.status,p.proposer])];
     }
     const reference = z.string().trim().min(1).max(64).parse(args[0]);
     const source = account(args[1]);
     const id = `${network}:${source}:${reference}`;
-    const policy = await this.read(network,source,'get_policy');
+    const policy = await read(network,source,'get_policy');
     let recipient = '', asset = '', decimals = 0, amount = '', baseUnits = '';
     let method = '', callArgs: Record<string,unknown> = {}, deposit = '0';
     let proposalState: unknown;
@@ -223,7 +225,7 @@ export class TableRuntime {
       ({display:amount,baseUnits} = parsed.amount);
       if(isStake) {
         positiveAmount(args[3],24);
-        z.string().regex(/^\d+$/).parse(await this.read(network,recipient,'get_account_staked_balance',{account_id:source}));
+        z.string().regex(/^\d+$/).parse(await read(network,recipient,'get_account_staked_balance',{account_id:source}));
       }
       const bond = z.object({proposal_bond:z.string().regex(/^\d+$/)}).parse(policy).proposal_bond;
       const bytes = new TextEncoder().encode(JSON.stringify(targetArgs));
@@ -231,17 +233,17 @@ export class TableRuntime {
       const transaction:WalletTransaction = {receiverId:source,actions:[{type:'FunctionCall',params:{methodName:'add_proposal',args:{proposal:{description:`NearSheets ${reference}`,kind:{FunctionCall:{receiver_id:recipient,actions:[{method_name:targetMethod,args:encoded,gas,deposit:baseUnits}]}}}},gas:'200000000000000',deposit:bond}}]};
       const data = {id,kind:name,network,source,recipient,asset,decimals,amount,baseUnits,policy,transaction};
       const label = `Draft · ${isStake ? 'Stake' : targetMethod} · ${amount} NEAR → ${recipient} · ${source} · ${reference}`;
-      this.operations.set(label,{...data,revision:JSON.stringify(data)});return label;
+      accept();this.operations.set(label,{...data,revision:JSON.stringify(data)});return label;
     }
     if (name === 'INTENTS_SWAP') {
       if (network !== 'mainnet') throw unavailable('1Click has no testnet route.');
       if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input:QuoteInput = {originAsset:text(args[2]),destinationAsset:text(args[3]),amount:text(args[4]),destinationChain:text(args[5]),recipient:text(args[6]),refundTo:account(args[7]),slippageTolerance:Number(args[8])};
       if (input.refundTo !== source) throw invalidInput('DAO-funded swaps must refund to the source DAO.');
-      const estimate = await this.intents.estimate(input);
+      const estimate = await this.cached(['intents-estimate',input],()=>this.intents!.estimate(input),5000,context);
       if (estimate.origin.blockchain !== 'near' || !input.originAsset.startsWith('nep141:')) throw unavailable('DAO funding currently supports NEAR fungible tokens only.');
       asset = account(input.originAsset.slice(7));
-      const meta = metadataSchema.parse(await this.read(network,asset,'ft_metadata'));
+      const meta = metadataSchema.parse(await read(network,asset,'ft_metadata'));
       if (meta.decimals !== estimate.origin.decimals) throw new Error('Provider and NEAR token precision differ.');
       decimals = meta.decimals; recipient = input.recipient;
       ({display:amount,baseUnits} = positiveAmount(input.amount,decimals));
@@ -250,11 +252,11 @@ export class TableRuntime {
         intents:{input,stage:'estimated' as const,quote:estimate.response,expiresAt:estimate.response.quote.deadline,providerId:estimate.response.correlationId}};
       const op = {...data,revision:JSON.stringify(data)};
       const label = `Swap draft · ${amount} ${asset} → ${recipient} · ${source} · ${reference}`;
-      this.operations.set(label,op);return label;
+      accept();this.operations.set(label,op);return label;
     }
     if (name === 'SPUTNIK_TRANSFER') {
       recipient = account(args[2]); asset = text(args[4]);
-      const meta = asset === 'near' ? {decimals:24} : metadataSchema.parse(await this.read(network,account(asset),'ft_metadata'));
+      const meta = asset === 'near' ? {decimals:24} : metadataSchema.parse(await read(network,account(asset),'ft_metadata'));
       decimals = meta.decimals;
       ({display:amount,baseUnits} = positiveAmount(args[3],decimals));
       const bond = z.object({proposal_bond:z.string().regex(/^\d+$/)}).parse(policy).proposal_bond;
@@ -263,7 +265,7 @@ export class TableRuntime {
     } else if (name === 'SPUTNIK_VOTE') {
       const proposalId = z.number().int().nonnegative().parse(args[2]);
       const action = z.enum(['VoteApprove','VoteReject','VoteRemove']).parse(args[3]);
-      proposalState = await this.read(network,source,'get_proposal',{id:proposalId});
+      proposalState = await read(network,source,'get_proposal',{id:proposalId});
       z.object({status:z.literal('InProgress')}).parse(proposalState);
       checkRouteExpiry(proposalState,action);
       method = 'act_proposal'; callArgs = {id:proposalId,action};
@@ -272,7 +274,7 @@ export class TableRuntime {
     const data = {id,kind:name,network,source,recipient,asset,decimals,amount,baseUnits,transaction,policy,proposal:proposalState};
     const operation: Operation = {...data,revision:JSON.stringify(data)};
     const label = `${name === 'SPUTNIK_TRANSFER' ? `Draft · ${amount} ${asset} → ${recipient}` : `Draft · ${text(args[3])} #${text(args[2])}`} · ${source} · ${network} · ${reference}`;
-    this.operations.set(label,operation);
+    accept();this.operations.set(label,operation);
     return label;
   }
   /** Explicit preparation allocates a funding target; formulas cannot call this. */
@@ -292,8 +294,12 @@ export class TableRuntime {
     for (const [label,value] of this.operations) if(value.id===op.id && value.revision===op.revision)this.operations.set(label,prepared);
     return prepared;
   }
-  refresh() { this.epoch++; this.operations.clear(); this.diagnostics.clear(); this.query.clear(); }
-  dispose() { this.disposed = true; this.refresh(); }
+  refresh(keys?:ReadonlySet<string>) {
+    this.epoch++;this.diagnostics.clear();
+    if(keys) {for(const key of keys){this.query.removeQueries({queryKey:JSON.parse(key) as unknown[],exact:true});const read=this.evidence.get(key);if(read)read.stale=true;}}
+    else {this.query.clear();for(const read of this.evidence.values())read.stale=true;}
+  }
+  dispose() { this.disposed = true; this.refresh();this.bindings.clear();this.operations.clear(); }
 }
 
 export function checkRouteExpiry(proposal:unknown,action:string) {

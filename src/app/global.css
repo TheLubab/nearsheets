@@ -585,3 +585,29 @@ body { background: var(--background); color: var(--foreground); }
 .function-arguments input,
 .function-arguments select { border-color: var(--input-border); }
 .dialog-content a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+/* Native Blockchain selectors and transient, sheet-focused workflow controls. */
+.function-menu { width: min(390px, calc(100vw - 40px)); padding: 8px; color: var(--foreground); background: var(--app-surface); }
+.function-menu input { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 6px; font: inherit; }
+.function-menu [role="group"] { max-height: min(480px,60vh); overflow-y: auto; }
+.function-menu button { display: grid; width: 100%; gap: 3px; padding: 10px; border: 0; border-radius: 6px; text-align: left; font: inherit; color: inherit; background: transparent; cursor: pointer; }
+.function-menu button:hover, .function-menu button:focus-visible { background: var(--muted); }
+.function-menu button[aria-disabled="true"] { color: var(--muted-foreground); }
+.function-menu small, .function-menu span { font-size: 12px; line-height: 1.45; color: var(--muted-foreground); }
+.function-menu :focus-visible, .reference-picker :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.argument-control { display: flex; gap: 6px; align-items: start; }
+.argument-control :is(input,select,textarea) { flex: 1; min-width: 0; }
+.function-arguments textarea { font: inherit; border: 1px solid var(--input-border); border-radius: 5px; padding: 8px; background: var(--app-surface); color: var(--foreground); }
+.function-arguments small { color: var(--muted-foreground); font-weight: 400; overflow-wrap: anywhere; }
+.function-arguments input[type="checkbox"] { width: auto; }
+.reference-picker { position: fixed; z-index: 11002; bottom: 48px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; flex-wrap: wrap; gap: 10px; width: max-content; max-width: calc(100vw - 40px); padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--app-surface); box-shadow: 0 8px 30px #0002; font-size: 13px; }
+.reference-picker button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--muted); color: var(--foreground); cursor: pointer; }
+.dialog-content.batch-review { width: min(1200px,calc(100vw - 24px)); }
+.review-table-scroll { overflow: auto; max-height: 50vh; }
+.review-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.review-table th { position: sticky; top: 0; z-index: 1; background: var(--muted); text-align: left; }
+.review-table :is(td,th) { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.review-table td { min-width: 90px; overflow-wrap: anywhere; }
+.review-table small { display: block; color: var(--muted-foreground); }
+.review-table td:last-child { min-width: 230px; }
+.review-table pre { max-width: 420px; }

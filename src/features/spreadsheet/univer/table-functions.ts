@@ -24,6 +24,7 @@ export function createTableFunctionCatalog(runtime:TableRuntime, readFormula:(ce
         const formula=readFormula(cell);
         const version=runtime.requestVersion();
         const args=variants.map(value=>value.isArray() ? (value as ArrayValueObject).toValue() : value.getValue());
+        const context=runtime.bindings.begin(cell,formula,args,name);
         const finish=runtime.diagnostics.begin(cell,formula,name+' '+JSON.stringify(args));
         return new AsyncObject((async()=>{
           try {
@@ -33,7 +34,7 @@ export function createTableFunctionCatalog(runtime:TableRuntime, readFormula:(ce
               if(value.isError()) { finish();return value; }
               if(value.isArray())throw invalidInput('This argument requires a single value or cell reference.');
             }
-            const result=await runtime.calculate(name,args);
+            const result=await runtime.calculate(name,args,context);
             runtime.accept(version);
             if(readFormula(cell)===formula)finish();
             return resultObject(result);

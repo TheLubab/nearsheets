@@ -25,20 +25,20 @@ export function executionProblem(record:Execution):Problem|null {
 }
 export interface ReviewedPlan { operations: Operation[]; snapshot: string; account: string; network: string }
 
-function snapshotFingerprint(snapshot: unknown): string {
+export function snapshotFingerprint(snapshot: unknown): string {
   if (!snapshot || typeof snapshot !== 'object') return JSON.stringify(snapshot);
   const data = snapshot as {resources?: Array<{name:string}>};
   return JSON.stringify({...data,resources:data.resources?.filter(item=>item.name !== 'nearsheets.table')});
 }
 
 /** Freeze the exact payload and all dependencies, including policy and current proposal state. */
-export function reviewPlan(operations: Operation[], snapshot: unknown, wallet: WalletController): ReviewedPlan {
+export function reviewPlan(operations: Operation[], snapshot: unknown, wallet: WalletController, allowEstimated = false): ReviewedPlan {
   const state = wallet.getState();
   if (!state.connection || state.status !== 'connected') throw invalidInput('Connect a wallet to review execution.', 'Use the wallet control to connect, then review the selected actions again.');
   if (!operations.length) throw invalidInput('Select actionable cells first.', 'Select cells containing action drafts, then choose Review actions.');
   const ids = new Set<string>();
   for (const op of operations) {
-    if (op.intents && (op.intents.stage !== 'prepared' || Date.parse(op.intents.expiresAt) <= Date.now())) throw staleData('Prepare a current Intents quote before review.');
+    if (!allowEstimated && op.intents && (op.intents.stage !== 'prepared' || Date.parse(op.intents.expiresAt) <= Date.now())) throw staleData('Prepare a current Intents quote before review.');
     if (ids.has(op.id)) throw invalidInput('Duplicate action reference in selection. Copies represent the same action.', 'Select one copy of each action, or use a new reference for an intentionally separate action.');
     ids.add(op.id);
     if (op.network !== state.network) throw invalidInput('The wallet and action networks differ.', 'Connect the wallet on the action’s network, then review again.');
@@ -76,7 +76,9 @@ export async function executePlan(options: {
     if (previous && previous.state !== 'cancelled' && previous.state !== 'failed')
       throw invalidInput('This action already has an execution attempt. Reconcile its transaction before resubmitting.', 'Use Inspect to check the recorded transaction. If no hash was returned, check wallet history.');
     // A new policy/proposal read is compared with the reviewed values; it cannot alter the approved payload.
-    runtime.query.clear();
+    runtime.query.removeQueries({queryKey:[op.network,op.source,'get_policy'],exact:false});
+    runtime.query.removeQueries({queryKey:[op.network,op.source,'get_proposal'],exact:false});
+    if(op.asset&&op.asset!=='near')runtime.query.removeQueries({queryKey:[op.network,op.asset,'ft_metadata'],exact:false});
     const policy = await runtime.read(op.network,op.source,'get_policy');
     if (JSON.stringify(policy) !== JSON.stringify(op.policy)) throw staleData('DAO policy changed. Review again.');
     if (op.kind === 'SPUTNIK_VOTE') {

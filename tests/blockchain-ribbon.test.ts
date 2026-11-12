@@ -3,7 +3,7 @@ import { Univer,IConfigService,ICommandService,ILogService } from '@univerjs/cor
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { FUniver } from '@univerjs/core/facade';
-import { IMenuManagerService,MenuManagerService,IconManager } from '@univerjs/preset-sheets-core';
+import { IMenuManagerService,MenuManagerService,IconManager,ComponentManager } from '@univerjs/preset-sheets-core';
 import { registerBlockchainRibbon,ribbonCommandId } from '../src/features/spreadsheet/univer/blockchain-ribbon';
 
 afterEach(()=>vi.unstubAllGlobals());
@@ -14,6 +14,7 @@ function fixture() {
  injector.add([IMenuManagerService,{useValue:menus}]);
  const icons=new IconManager(injector.get(ILogService));
  injector.add([IconManager,{useValue:icons}]);
+ injector.add([ComponentManager,{useValue:new ComponentManager(injector.get(ILogService))}]);
  const api={updateMenuConfig:(config:Parameters<MenuManagerService['updateMenuConfig']>[0])=>menus.updateMenuConfig(config)} as unknown as FUniver;
  const registration=registerBlockchainRibbon(univer,api);
  return {menus,icons,commands:injector.get(ICommandService),dispose:()=>{registration.dispose();univer.dispose();}};
@@ -25,18 +26,18 @@ describe('native Blockchain ribbon integration',()=>{
   expect(tab?.title).toBe('Blockchain');expect(tab?.item).toBeUndefined();
   expect(tab?.children).toHaveLength(3);
   const tools=menus.getFlatMenuByPositionKey('ribbon.blockchain');
-  expect(tools.some(tool=>tool.item?.id===ribbonCommandId('dao'))).toBe(true);
+  expect(tools.some(tool=>tool.item?.id===ribbonCommandId('prepare'))).toBe(true);
   expect(tools.some(tool=>tool.item?.id===ribbonCommandId('review'))).toBe(true);
   dispose();
  });
  it('exposes all function choices through native dropdowns and registers Solar visuals',()=>{
   const {menus,icons,dispose}=fixture();
   const tools=menus.getFlatMenuByPositionKey('ribbon.blockchain.functions');
-  expect(tools).toHaveLength(5);
-  const dao=tools.find(tool=>tool.item?.id===ribbonCommandId('dao'))?.item;
+  expect(tools).toHaveLength(3);
+  const dao=tools.find(tool=>tool.item?.id===ribbonCommandId('prepare'))?.item;
   expect(dao?.type).toBe(1);
-  if(dao && 'selections' in dao)expect(dao.selections).toEqual(expect.arrayContaining([expect.objectContaining({value:'SPUTNIK_TRANSFER',label:{name:'SPUTNIK_TRANSFER',selectable:false}})]));
-  const visual=ribbonCommandId('accounts')+'.visual';
+  if(dao && 'selections' in dao)expect(dao.selections).toEqual([expect.objectContaining({label:expect.objectContaining({name:ribbonCommandId('prepare')+'.menu',props:{embedded:true,category:'Prepare action'}})})]);
+  const visual=ribbonCommandId('read')+'.visual';
   expect(icons.has(visual)).toBe(true);
   const markup=renderToStaticMarkup(createElement(icons.get(visual)));
   expect(markup).toContain('<svg');expect(markup).not.toContain('Balances');
@@ -46,9 +47,9 @@ describe('native Blockchain ribbon integration',()=>{
   const events=new EventTarget();vi.stubGlobal('window',events);
   const onCommand=vi.fn();events.addEventListener('nearsheets:command',onCommand);
   const {commands,dispose}=fixture();
-  commands.syncExecuteCommand(ribbonCommandId('accounts'),{value:'NEAR_BALANCE'});
+  commands.syncExecuteCommand(ribbonCommandId('read'),{value:'NEAR_BALANCE'});
   expect((onCommand.mock.calls[0]?.[0] as CustomEvent).detail).toBe('function:NEAR_BALANCE');
-  expect(commands.syncExecuteCommand(ribbonCommandId('accounts'),{value:'INVALID'})).toBe(false);
+  expect(commands.syncExecuteCommand(ribbonCommandId('read'),{value:'INVALID'})).toBe(false);
   expect(onCommand).toHaveBeenCalledTimes(1);
   commands.syncExecuteCommand(ribbonCommandId('review'));
   expect((onCommand.mock.calls[1]?.[0] as CustomEvent).detail).toBe('review');
