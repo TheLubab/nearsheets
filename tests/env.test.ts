@@ -19,11 +19,21 @@ describe("public environment configuration", () => {
     expect(env.VITE_INTENTS_API_URL).toBeUndefined();
   });
 
+  it("enables Vercel Analytics automatically by default", () => {
+    expect(readEnv({}).VITE_VERCEL_ANALYTICS_MODE).toBe("auto");
+  });
+
+  it("allows forcing or disabling Vercel Analytics", () => {
+    expect(readEnv({ VITE_VERCEL_ANALYTICS_MODE: "production" }).VITE_VERCEL_ANALYTICS_MODE).toBe("production");
+    expect(readEnv({ VITE_VERCEL_ANALYTICS_MODE: "none" }).VITE_VERCEL_ANALYTICS_MODE).toBeUndefined();
+  });
+
   it.each([
     { VITE_NEAR_NETWORK: "wrong-network" },
     { VITE_NEAR_RPC_URL: "not-a-url" },
     { VITE_WALLET_MANIFEST_URL: "javascript:alert(1)" },
     { VITE_INTENTS_API_URL: "off" },
+    { VITE_VERCEL_ANALYTICS_MODE: "sometimes" },
   ])("rejects invalid supplied configuration", (values) => {
     expect(() => readEnv(values)).toThrow("Invalid environment configuration");
   });

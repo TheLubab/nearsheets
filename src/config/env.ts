@@ -13,6 +13,15 @@ const intentsApiUrl = z
   .optional()
   .transform((value) => value === "none" ? undefined : value ?? DEFAULT_INTENTS_API_URL);
 
+/**
+ * Vercel Web Analytics is enabled by default. It only reports when served by
+ * Vercel; elsewhere its script is unavailable. Disable it with `none`.
+ */
+const analyticsMode = z
+  .union([z.literal("auto"), z.literal("production"), z.literal("development"), z.literal("none")])
+  .default("auto")
+  .transform((value) => value === "none" ? undefined : value);
+
 export function readEnv(runtimeEnv: Record<string, string | number | boolean | undefined>) {
   return createEnv({
     clientPrefix: "VITE_",
@@ -23,6 +32,7 @@ export function readEnv(runtimeEnv: Record<string, string | number | boolean | u
       VITE_AUTH_API_URL: httpUrl.optional(),
       VITE_TREZU_API_URL: httpUrl.optional(),
       VITE_INTENTS_API_URL: intentsApiUrl,
+      VITE_VERCEL_ANALYTICS_MODE: analyticsMode,
     },
     runtimeEnv,
     emptyStringAsUndefined: true,
