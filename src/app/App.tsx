@@ -32,14 +32,13 @@ export function App() {
   const [templateView, setTemplateView] = useState<'welcome' | 'templates' | null>(null);
   const welcomeConsidered = useRef(false);
   useEffect(() => {
-    // Shown as soon as the workspace knows this is a new, saveable one. Gating
-    // on the editor session too would hold the welcome back until Univer has
-    // mounted and reached its steady stage, which is the slowest startup step
-    // and has nothing to do with whether the intro should appear.
+    // Startup saves a blank workbook before the user chooses how to begin.
+    // Reopening that workbook must not count as dismissing the welcome.
+    // No need to wait for the slower editor initialization to show the intro.
     if (welcomeConsidered.current || state.status !== 'ready') return;
     welcomeConsidered.current = true;
-    if (state.isNewWorkspace && state.saveStatus !== 'error' && !welcomePreference.isDismissed()) setTemplateView('welcome');
-  }, [state.status, state.isNewWorkspace, state.saveStatus, welcomePreference]);
+    if (state.saveStatus !== 'error' && !welcomePreference.isDismissed()) setTemplateView('welcome');
+  }, [state.status, state.saveStatus, welcomePreference]);
   const changeTemplateView = (view: 'welcome' | 'templates' | null) => {
     if (templateView === 'welcome') welcomePreference.dismiss();
     setTemplateView(view);
