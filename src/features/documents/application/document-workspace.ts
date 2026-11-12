@@ -340,10 +340,10 @@ export function createDocumentWorkspace(
       }
       await repository.save(document);
       openDocument(document);
-      toast.success('Created a new document.');
+      toast.success('Created a new spreadsheet.');
     } catch (cause) {
       noticeError(
-        cause instanceof Error ? cause.message : "The new document could not be saved.",
+        cause instanceof Error ? cause.message : "The new spreadsheet could not be saved.",
       );
     }
   };
@@ -389,7 +389,7 @@ export function createDocumentWorkspace(
       await replaceDocument(renameDocument(base, title, now()));
     } catch (cause) {
       noticeError(
-        cause instanceof Error ? cause.message : "The document could not be renamed.",
+        cause instanceof Error ? cause.message : "The spreadsheet could not be renamed.",
       );
     }
   };

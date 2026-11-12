@@ -1,3 +1,4 @@
+import { referencedProblems } from '../src/features/table/referenced-problems';
 import {describe,it,expect,vi} from 'vitest';
 import {Univer,LocaleType} from '@univerjs/core';
 import {FUniver} from '@univerjs/core/facade';
@@ -54,6 +55,32 @@ describe('cell-specific blockchain errors through the real formula engine',()=>{
       await vi.waitFor(()=>expect(f.sheet.getRange('B1').getRawValue()).toBe(1.25));
       expect(f.diagnostics('B1')).toEqual([]);
     } finally {f.dispose();}
+  });
+
+
+  it('shows the originating failure on a cross-sheet quote comparison popup and clears after correction',async()=>{
+    const f=fixture();let registration:ReturnType<typeof registerCellErrorAlerts>|undefined;
+    try {
+      const details=f.book.create('Quote details',100,12),route=f.book.create('Quote route',100,12);
+      for(const row of [3,5,6,7,8,10])route.getRange('B'+row).setValue('configured');
+      f.sheet.getRange('B9').setValue('1');
+      details.getRange('A3').setValue({f:'=NEAR_BALANCE("offline.near","mainnet")'});
+      f.sheet.getRange('C9').setValue({f:`=IF(OR(B9="",'Quote route'!B3="",'Quote route'!B5="",'Quote route'!B6="",'Quote route'!B7="",'Quote route'!B8="",'Quote route'!B10=""),"",IF('Quote details'!A3="Estimate · no funding instructions",'Quote details'!B5,'Quote details'!A3))`});
+      await vi.waitFor(()=>expect(f.sheet.getRange('C9').getRawValue()).toBe('#CONNECT!'));
+      const location=f.location(8,2),range=f.sheet.getRange('C9');
+      expect(referencedProblems(f.api,f.runtime,location,range.getFormula(),range.getRawValue())[0]).toMatchObject({code:'connection-failed'});
+      const updates=new Subject<void>(),currentAlert=new Map();
+      const showAlert=vi.fn(alert=>{currentAlert.set(alert.key,{alert});updates.next();});
+      registration=registerCellErrorAlerts(f.api,{currentAlert,currentAlert$:updates,showAlert} as unknown as CellAlertManagerService,f.runtime);
+      const key='SHEET_FORMULA_ALERT:'+f.book.getId();
+      showAlert({key,location:{unitId:f.book.getId(),subUnitId:f.sheet.getSheetId(),row:8,col:2},title:'Error',message:'Generic'});
+      expect(currentAlert.get(key).alert.message).toContain('Source: Quote details!A3');
+      expect(currentAlert.get(key).alert.message).toContain('offline.near');
+      expect(referencedProblems(f.api,f.runtime,location,range.getFormula(),'Handled')).toEqual([]);
+      details.getRange('A3').setValue(7);
+      await vi.waitFor(()=>expect(range.getRawValue()).toBe(7));
+      expect(referencedProblems(f.api,f.runtime,location,range.getFormula(),range.getRawValue())).toEqual([]);
+    }finally{registration?.dispose();f.dispose();}
   });
 
   it('distinguishes connection and input errors and preserves exact decimal text',async()=>{
@@ -154,6 +181,34 @@ describe('native cell alert enrichment',()=>{
     currentAlert.clear();updates.next();
     expect(currentAlert.size).toBe(0);
     subscription.dispose();runtime.dispose();
+  });
+
+
+  it('opens a cell popup when Univer creates no native alert, and removes it on edit, correction and disposal',async()=>{
+    const runtime=new TableRuntime({balance:async()=>'',view:async()=>null});
+    const updates=new Subject<void>(),editorUpdates=new Subject<void>(),currentAlert=new Map();
+    const showAlert=vi.fn(alert=>{currentAlert.set(alert.key,{alert});updates.next();});
+    const removeAlert=vi.fn(key=>{currentAlert.delete(key);updates.next();});
+    const location={unitId:'book',sheetId:'sheet',row:0,column:0};
+    const formula='=NEAR_BALANCE("offline.near","mainnet")';let value:unknown='#CONNECT!',isEditing=false;
+    const problem={code:'service-failed',title:'Intents request failed',message:'Intents returned HTTP 429.',recovery:'Try again later.',details:'GET https://example.invalid/v0/tokens',cellError:'#CONNECT!' as const};
+    runtime.diagnostics.begin(location,formula,'request')(problem);
+    let selectionChanged=()=>{};
+    const cell={getFormula:()=>formula,getRawValue:()=>value,getValue:()=>value,getSheetId:()=> 'sheet',getRow:()=>0,getColumn:()=>0};
+    const book={getId:()=> 'book',getActiveCell:()=>cell,onSelectionChange:(callback:()=>void)=>{selectionChanged=callback;return {dispose:vi.fn()};},onCommandExecuted:()=>({dispose:vi.fn()}),getSheetBySheetId:()=>({getRange:()=>cell})};
+    const api={getActiveWorkbook:()=>book,getWorkbook:()=>book} as unknown as FUniver;
+    const registration=registerCellErrorAlerts(api,{currentAlert,currentAlert$:updates,showAlert,removeAlert} as unknown as CellAlertManagerService,runtime,{isVisible:()=>({visible:isEditing}),visible$:editorUpdates});
+    await Promise.resolve();
+    const key='nearsheets.blockchain-error:book';
+    expect(currentAlert.get(key).alert.message).toContain('HTTP 429');
+    expect(currentAlert.get(key).alert.message).toContain('GET https://example.invalid/v0/tokens');
+    isEditing=true;editorUpdates.next();await Promise.resolve();expect(currentAlert.has(key)).toBe(false);
+    isEditing=false;selectionChanged();await Promise.resolve();expect(currentAlert.has(key)).toBe(true);
+    value=1;selectionChanged();await Promise.resolve();expect(currentAlert.has(key)).toBe(false);
+    value='#CONNECT!';selectionChanged();await Promise.resolve();expect(currentAlert.has(key)).toBe(true);
+    registration.dispose();expect(currentAlert.has(key)).toBe(false);
+    const count=showAlert.mock.calls.length;selectionChanged();await Promise.resolve();expect(showAlert).toHaveBeenCalledTimes(count);
+    runtime.dispose();
   });
 
   it('does not turn a generic RPC failure into an account-not-found claim',async()=>{

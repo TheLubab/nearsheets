@@ -1,5 +1,7 @@
 # NearSheets formula catalog
 
+The payroll, invoice, community budget and grants templates use `SPUTNIK_TRANSFER` and `NS_STATUS`. Treasury overview uses balance/proposal reads and an optional `SPUTNIK_STAKE` sheet; Proposal review adds `SPUTNIK_VOTE`. International payouts compares three `INTENTS_QUOTE` scenarios, prepares `INTENTS_SWAP`, and separates `NS_RECEIPT` from `INTENTS_STATUS`. Payment workbooks include receipt sheets. Gallery templates open on live public reads; action inputs and quote-only address configuration are separate. Template labels describe familiar workflows; these functions retain the exact signatures and approval requirements below.
+
 Checked against `TABLE_FUNCTIONS` in `src/features/table/runtime.ts` on 2026-11-11. These are application functions, not built-in Univer or upstream NEAR APIs. All listed arguments are required. Network arguments accept `mainnet` or `testnet`; Intents swaps currently require `mainnet`. Choose a Blockchain dropdown entry for guided arguments or type the formula directly. The dialog accepts an expression beginning with `=` to insert a cell reference or nested formula instead of a literal.
 
 ## Blockchain and action functions
@@ -44,7 +46,7 @@ These examples prepare data/drafts only; they are not authorization to submit an
 - `NS_FIELD` accepts `amount`, `baseUnits`, `recipient`, `asset`, `source`, `network` or `kind`. It resolves a currently calculated action descriptor.
 - `NS_STATUS` describes local recorded execution. Proposal submission is not payment completion. `INTENTS_STATUS` separately queries the provider using the recorded deposit address. Runtime descriptors must be recalculated after reopening; saved draft/read resources are not currently hydrated into a new runtime.
 - Quote tables require three free columns. Contract-view and proposal results also need space to spill; native collision behavior must still be checked in the browser. Proposal pagination beyond the first 100 is not implemented.
-- Reads use workbook-owned cached queries with a 30-second stale time (quote estimates use five seconds). Refresh clears cached queries, drafts and transient diagnostics and triggers calculation. Inspection timestamps belong to the last successful read. Failed formulas return real spreadsheet errors and expose a cell-specific explanation in the native selection popup and Inspect. Invalid input uses `#VALUE!`, confirmed missing accounts/contracts or unavailable operations use `#N/A`, connection failures use `#CONNECT!`, and other read failures use `#ERROR!`. `IFERROR` can handle these errors. Ordinary dependent formulas use Univer's standard explanation. Live-service availability is not guaranteed by mocked tests.
+- Reads use workbook-owned cached queries with a 30-second stale time (quote estimates use five seconds). Refresh clears cached queries, drafts and transient diagnostics and triggers calculation. Inspection timestamps belong to the last successful read. Failed formulas return real spreadsheet errors and expose a cell-specific explanation in the native selection popup and Inspect. Invalid input uses `#VALUE!`, confirmed missing accounts/contracts or unavailable operations use `#N/A`, connection failures use `#CONNECT!`, and other read failures use `#ERROR!`. `IFERROR` can handle these errors. Referenced blockchain errors can expose the originating failure and source cell through the popup and Inspect; untraced errors retain Univer’s standard explanation. Live-service availability is not guaranteed by mocked tests.
 
 ## Additional local helper functions
 
@@ -60,3 +62,5 @@ These are registered through `src/features/treasury/formulas/custom-functions.ts
 | `NS_LEGACY_DRAFT(kind, network, treasury, reference)` | Compatibility helper deriving a historical draft ID. It does not create a current executable operation; use SPUTNIK/INTENTS action functions for new work. |
 
 For UI behavior, balance formats, document interchange and live-service limits, see [README](../README.md). For acceptance evidence, see [implementation status](implementation-status.md).
+
+Intents dry estimates may omit a provider deadline. In that case the quote table labels the sent request deadline as **Estimate cutoff (requested)**; it is not a guaranteed provider route expiry. Explicit funding preparation still requires a provider-returned deadline.

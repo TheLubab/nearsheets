@@ -1,3 +1,4 @@
+import { referencedProblems } from './referenced-problems';
 import { selectionDependencies } from './selection-dependencies';
 import type { WorkbookSession } from '../spreadsheet/univer/create-workbook-session';
 import type { Operation } from './runtime';
@@ -20,7 +21,7 @@ export function getTableSelection(session:WorkbookSession|null) {
    const range=sheet.getRange(row,column),value=range.getValue?.()??range.getRawValue(),formula=range.getFormula();
    const location={unitId:workbook!.getId?.()??'',sheetId:sheet.getSheetId?.()??'',row,column};
    const operation=runtime.operations.get(String(value));
-   const problems=runtime.diagnostics?.get(location,formula,value)??[];
+   const problems=runtime.diagnostics?referencedProblems(session.univerAPI,runtime,location,formula,value):[];
    const bindings=runtime.bindings?.forCell(location)??[];
    const keys=[...selectionDependencies(session,location)];keys.forEach(key=>readKeys.add(key));
    if(operation)operations.push(operation);

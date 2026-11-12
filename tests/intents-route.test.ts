@@ -6,19 +6,51 @@ import type { ExecutionJournal } from '../src/features/table/execution';
 import type { WalletController } from '../src/features/wallet/application/wallet-controller';
 const input={originAsset:'nep141:wrap.near',destinationAsset:'eth-usdc',amount:'1.000001',destinationChain:'eth',recipient:'0x0000000000000000000000000000000000000001',refundTo:'dao.near',slippageTolerance:100};
 const quote={correlationId:'quote-1',timestamp:'2026-11-11T12:00:00Z',quote:{amountIn:'1000001',amountOut:'2000000',minAmountOut:'1980000',deadline:'2099-01-01T00:00:00Z',timeEstimate:30}};
-function provider() {
+function provider(omitDeadline=false) {
  const requests: Array<{url:string;body?:Record<string,unknown>}>=[];
  const request=vi.fn<typeof fetch>(async (url,init)=>{
    const path=String(url);const body=init?.body?JSON.parse(String(init.body)):undefined;requests.push({url:path,body});
    let value: unknown;
    if(path.endsWith('/tokens'))value=[{assetId:'nep141:wrap.near',blockchain:'near',symbol:'wNEAR',decimals:6},{assetId:'eth-usdc',blockchain:'eth',symbol:'USDC',decimals:6}];
    else if(path.includes('/status'))value={correlationId:'quote-1',status:'REFUNDED',updatedAt:'2026-11-11T12:00:00Z',swapDetails:{refundedAmount:'1000001'}};
-   else value={...quote,quote:{...quote.quote,...(body?.dry===false?{depositAddress:'deposit.near'}:{})}};
+   else {
+     if(typeof body?.deadline!=='string'||!Number.isFinite(Date.parse(body.deadline))||Date.parse(body.deadline)<=Date.now())return new Response('deadline must be a valid future ISO 8601 date string',{status:400});
+     value={...quote,quote:{...quote.quote,...(omitDeadline?{deadline:undefined}:{}),...(body?.dry===false?{depositAddress:'deposit.near'}:{})}};
+   }
    return new Response(JSON.stringify(value),{status:200});
  });
  return {api:new OneClick('https://provider.invalid',request),request,requests};
 }
 describe('1Click estimation, explicit preparation and expiry',()=>{
+ it('accepts a dry response without a deadline and preserves the raw provider response',async()=>{
+   const {api,requests}=provider(true);
+   const estimate=await api.estimate(input);
+   expect(estimate.response.quote.deadline).toBeUndefined();
+   expect(estimate.expirySource).toBe('request');
+   expect(estimate.expiresAt).toBe(requests.at(-1)?.body?.deadline);
+   const runtime=new TableRuntime({view:async()=>null,balance:async()=> '0'},undefined,api);
+   try {
+     const table=await runtime.calculate('INTENTS_QUOTE',[input.originAsset,input.destinationAsset,input.amount,input.destinationChain,input.recipient,input.refundTo,input.slippageTolerance]);
+     expect(table).toContainEqual(['Estimate cutoff (requested)',expect.any(String),'UTC']);
+   }finally{runtime.dispose();}
+ });
+ it('refuses a prepared deposit response without an authoritative provider deadline',async()=>{
+   const {api}=provider(true);
+   await expect(api.prepare(input)).rejects.toThrow(/no provider deadline/);
+ });
+ it('sends a fresh ISO deadline for both dry estimation and explicit preparation',async()=>{
+   const {api,requests}=provider();
+   const start=Date.parse('2026-11-12T17:18:20.392Z');
+   const now=vi.spyOn(Date,'now').mockReturnValue(start);
+   try {
+     await api.estimate(input);
+     expect(requests.at(-1)?.body).toMatchObject({dry:true,deadline:'2026-11-12T17:28:20.392Z'});
+     now.mockReturnValue(start+60_000);
+     await api.prepare(input);
+     expect(requests.at(-1)?.body).toMatchObject({dry:false,deadline:'2026-11-12T17:29:20.392Z'});
+     expect(requests.filter(r=>r.body?.dry===false)).toHaveLength(1);
+   }finally{now.mockRestore();}
+ });
  it('shows exact readable token quantities alongside the original quote base units',async()=>{
    const {api}=provider();
    const runtime=new TableRuntime({view:async()=>null,balance:async()=> '0'},undefined,api);

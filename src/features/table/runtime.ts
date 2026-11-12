@@ -146,7 +146,7 @@ export class TableRuntime {
       if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input = {originAsset:text(args[0]),destinationAsset:text(args[1]),amount:text(args[2]),destinationChain:text(args[3]),recipient:text(args[4]),refundTo:text(args[5]),slippageTolerance:Number(args[6])};
       const quote = await this.cached(['intents-estimate',input],()=>this.intents!.estimate(input),5000,context);
-      if (Date.parse(quote.response.quote.deadline) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
+      if (Date.parse(quote.expiresAt) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
       const amounts = quote.response.quote;
       return [['Estimate · no funding instructions','Value','Token / unit'],
         ['Input amount',amountFromBaseUnits(amounts.amountIn,quote.origin.decimals)!.display,quote.origin.symbol],
@@ -154,7 +154,7 @@ export class TableRuntime {
         ['Minimum output',amountFromBaseUnits(amounts.minAmountOut,quote.destination.decimals)!.display,quote.destination.symbol],
         ['Input asset',quote.origin.assetId,quote.origin.blockchain],
         ['Output asset',quote.destination.assetId,quote.destination.blockchain],
-        ['Expires',amounts.deadline,'UTC'],['Slippage',input.slippageTolerance,'bps'],
+        [quote.expirySource==='provider'?'Expires':'Estimate cutoff (requested)',quote.expiresAt,'UTC'],['Slippage',input.slippageTolerance,'bps'],
         ['Input base units',amounts.amountIn,quote.origin.symbol],
         ['Output base units',amounts.amountOut,quote.destination.symbol],
         ['Minimum output base units',amounts.minAmountOut,quote.destination.symbol],
@@ -249,7 +249,7 @@ export class TableRuntime {
       ({display:amount,baseUnits} = positiveAmount(input.amount,decimals));
       const data = {id,kind:name,network,source,recipient,asset,decimals,amount,baseUnits,policy,
         transaction:{receiverId:source,actions:[]} as WalletTransaction,
-        intents:{input,stage:'estimated' as const,quote:estimate.response,expiresAt:estimate.response.quote.deadline,providerId:estimate.response.correlationId}};
+        intents:{input,stage:'estimated' as const,quote:estimate.response,expiresAt:estimate.expiresAt,providerId:estimate.response.correlationId}};
       const op = {...data,revision:JSON.stringify(data)};
       const label = `Swap draft · ${amount} ${asset} → ${recipient} · ${source} · ${reference}`;
       accept();this.operations.set(label,op);return label;
@@ -286,7 +286,7 @@ export class TableRuntime {
     const quote = await this.intents.prepare(op.intents.input);
     const depositAddress = account(quote.response.quote.depositAddress);
     const policy = z.object({proposal_bond:z.string().regex(/^\d+$/)}).parse(op.policy);
-    const route = {...op.intents,stage:'prepared' as const,quote:quote.response,expiresAt:quote.response.quote.deadline,depositAddress,providerId:quote.response.correlationId};
+    const route = {...op.intents,stage:'prepared' as const,quote:quote.response,expiresAt:quote.expiresAt,depositAddress,providerId:quote.response.correlationId};
     const description = 'NearSheets Intents ' + JSON.stringify({reference:op.id,expiresAt:route.expiresAt,recipient:op.recipient,input:route.input,quote:route.quote});
     const transaction:WalletTransaction = {receiverId:op.source,actions:[{type:'FunctionCall',params:{methodName:'add_proposal',args:{proposal:{description,kind:{Transfer:{token_id:op.asset,receiver_id:depositAddress,amount:op.baseUnits}}}},gas:'200000000000000',deposit:policy.proposal_bond}}]};
     const data = {...op,intents:route,transaction};

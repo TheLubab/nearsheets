@@ -20,9 +20,9 @@ On a first visit, after document initialization succeeds, show a small “Welcom
 
 - **Get started:** create and open a fresh guided workbook.
 - **Use a template:** open the template picker.
-- **Blank workbook:** continue into the initial blank workbook without creating a redundant copy.
+- **Blank workbook:** continue into the initial blank workbook without creating a redundant copy. The control reads **Start blank** with the summary "Create a new spreadsheet."
 
-Closing the welcome dialog also continues into the workbook. Remember dismissal locally, separately from workbook contents. Existing users with saved documents should retain normal startup behavior and should not receive the welcome merely because the new preference is missing. Do not use a preference write to replace or clear documents.
+Closing the welcome dialog also continues into the workbook. Gate the welcome on the workspace being ready with a saveable new workspace; do not also wait for the editor session, because Univer's steady stage is the slowest startup step and the dialog should not trail the finished grid. Remember dismissal locally, separately from workbook contents. Existing users with saved documents should retain normal startup behavior and should not receive the welcome merely because the new preference is missing. Do not use a preference write to replace or clear documents.
 
 If preference storage is unavailable, editing must still work; avoid repeatedly reopening the dialog within the current session. Gate welcome display on completed startup so it cannot race document restoration or appear over a startup error.
 

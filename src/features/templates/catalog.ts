@@ -1,8 +1,9 @@
+import { designTemplate } from './workbook-designs';
 import { CellValueType, LocaleType } from '@univerjs/core';
 import type { ICellData } from '@univerjs/core';
 import type { WorkbookSnapshot } from '../spreadsheet/model/workbook-snapshot';
 
-export type TemplateId = 'getting-started' | 'account-balances' | 'dao-proposals' | 'contributor-payments';
+export type TemplateId = 'getting-started' | 'account-balances' | 'dao-proposals' | 'contributor-payments' | 'invoices-expenses' | 'community-budget' | 'international-payouts' | 'treasury-overview' | 'grants-rewards';
 export interface WorkbookTemplate {
   readonly id: TemplateId;
   readonly name: string;
@@ -63,7 +64,7 @@ function gettingStarted() {
   line(s, 17, '4. Preparing, reviewing and signing are separate steps.', true);
   line(s, 18, 'Formulas prepare editable drafts. Select prepared cells and choose Blockchain → Review actions to inspect exact calls.');
   line(s, 19, 'Only Sign reviewed actions requests your wallet. A submitted DAO proposal is not a completed payment.');
-  line(s, 21, 'Next: File → Templates… → Contributor payments. Supply your own DAO, recipient, reference and exact amount.');
+  line(s, 21, 'Next: File → Templates… → Team payroll. Supply your treasury, recipient, reference and amount.');
   line(s, 22, 'No wallet is required for this tutorial. Refresh reads from Blockchain; use Details to inspect errors and freshness.');
   return workbook('Getting started', s);
 }
@@ -94,31 +95,92 @@ function daoProposals() {
   cell(s, 9, 1, '=IF(OR(B3="",B4=""),"Enter DAO and network above",SPUTNIK_PROPOSALS(B3,B4))');
   return workbook('DAO proposal tracker', s);
 }
-function contributorPayments() {
-  const s = sheet('Payments');
-  line(s, 1, 'Contributor payments', true);
-  input(s, 3, 'DAO account'); input(s, 4, 'network', 'testnet');
-  line(s, 6, 'Enter your own payment details in yellow Input cells. Amounts are exact decimal text; keep the Text format.');
+function paymentWorkbook(title = 'Team payroll', purpose = 'payee', extraLabels = ['Team member / note', 'Period']) {
+  const s = sheet('Payments', [230, 240, 210, 240, 300, 220, 240, 200]);
+  line(s, 1, title, true);
+  input(s, 3, 'shared treasury account (Sputnik)'); input(s, 4, 'network', 'testnet');
+  line(s, 6, 'Enter payment details in the yellow cells. Review the amount and asset before submitting a proposal.');
   line(s, 7, 'Use a unique reference for each new intended payment. Copying a row retains its identity; it is not new authorization.');
-  headers(s, 9, ['Input: unique reference', 'Input: recipient', 'Input: exact amount text', 'Input: asset (near or token)', 'Prepared transfer', 'Recorded status']);
+  headers(s, 9, ['Input: unique reference', `Input: ${purpose} account`, 'Amount', 'Input: asset (near or token)', 'Prepared transfer', 'Recorded status', ...extraLabels]);
   for (let r = 10; r <= 14; r++) {
     for (let c = 1; c <= 4; c++) cell(s, r, c, c === 4 ? 'near' : '', true);
+    cell(s, r, 7, '', true); cell(s, r, 8, '', true);
     cell(s, r, 5, `=IF(OR($B$3="",$B$4="",A${r}="",B${r}="",C${r}="",D${r}=""),"Enter all payment inputs",SPUTNIK_TRANSFER(A${r},$B$3,B${r},C${r},D${r},$B$4))`);
     cell(s, r, 6, `=IF(OR($B$3="",$B$4="",A${r}="",B${r}="",C${r}="",D${r}=""),"No draft yet",NS_STATUS(E${r}))`);
   }
   line(s, 16, 'Select prepared cells in column E → Blockchain → Review actions. Inspect exact amounts, recipients and calls.');
-  line(s, 17, 'Sign reviewed actions opens your wallet. Opening, editing, refreshing and preparing never sign or submit.');
-  line(s, 18, 'Recorded status tracks local attempts. A confirmed proposal still needs governance; it does not prove payment completion.');
-  line(s, 19, 'Token precision is verified from the contract. Never replace exact text amounts with rounded numeric balances.');
-  return workbook('Contributor payments', s);
+  line(s, 17, 'Signing submits one proposal per payment to the shared treasury. Editing and refreshing never sign or submit.');
+  line(s, 18, 'A submitted proposal still needs treasury approval and execution; it does not prove payment completion.');
+  line(s, 19, 'Amounts keep all entered digits. To pay a calculated amount, choose any rounding explicitly before entering it.');
+  line(s, 20, 'Notes in columns G and H are for your records; they do not change the proposal or schedule a payment.');
+  return workbook(title, s);
 }
 
-export const WORKBOOK_TEMPLATES: readonly WorkbookTemplate[] = [
+function treasuryOverview() {
+  const s = sheet('Treasury', [210, 450, 220, 260, 200, 200, 200]);
+  line(s, 1, 'Treasury overview', true);
+  line(s, 2, 'See a shared treasury balance and recent proposals in one place. Enter your own treasury account below.');
+  input(s, 4, 'shared treasury account (Sputnik)'); input(s, 5, 'network', 'testnet');
+  cell(s, 7, 1, 'NEAR balance (approximate)');
+  cell(s, 7, 2, '=IF(OR(B4="",B5=""),"Enter treasury and network",NEAR_BALANCE(B4,B5))');
+  line(s, 8, 'Select a balance and choose Blockchain → Inspect for full precision and source details.');
+  line(s, 10, 'Recent proposals: the first 100 are shown below. Keep A13:D113 free for the results.');
+  line(s, 11, 'A proposal submission is not a completed payment. Balances may include amounts reserved for storage and fees.');
+  cell(s, 13, 1, '=IF(OR(B4="",B5=""),"Enter treasury and network",SPUTNIK_PROPOSALS(B4,B5))');
+  return workbook('Treasury overview', s);
+}
+
+function internationalPayouts() {
+  const s = sheet('International payout', [290, 380, 250, 240, 250, 240, 220]);
+  line(s, 1, 'International payouts', true);
+  line(s, 2, 'Plan one cross-chain payout from a shared Sputnik treasury using NEAR Intents.');
+  input(s, 3, 'shared treasury account (also the refund account)');
+  input(s, 4, 'unique action reference');
+  input(s, 5, 'origin asset ID (NEAR fungible token)');
+  input(s, 6, 'destination asset ID');
+  input(s, 7, 'destination chain');
+  input(s, 8, 'recipient address on destination chain');
+  input(s, 9, 'amount');
+  input(s, 10, 'slippage in basis points', '100');
+  cell(s, 11, 1, 'Network'); cell(s, 11, 2, 'mainnet', true);
+  line(s, 13, 'Use asset IDs from the Intents provider catalog. Funding supports NEAR fungible tokens on mainnet only.');
+  line(s, 14, 'An estimate does not allocate a deposit. Review the prepared action to explicitly prepare a route.');
+  line(s, 15, 'Quotes expire. A submitted treasury proposal still needs approval; expiry may require a new proposal.');
+  cell(s, 17, 1, 'Prepared payout proposal');
+  cell(s, 17, 2, '=IF(OR(B3="",B4="",B5="",B6="",B7="",B8="",B9="",B10="",B11=""),"Enter payout inputs above",INTENTS_SWAP(B4,B3,B5,B6,B9,B7,B8,B3,VALUE(B10),B11))');
+  cell(s, 18, 1, 'Recorded status');
+  cell(s, 18, 2, '=IF(OR(B3="",B4="",B5="",B6="",B7="",B8="",B9="",B10="",B11=""),"Enter payout inputs above",NS_STATUS(B17))');
+  line(s, 20, 'Estimate below: keep A22:C40 free. Provider availability, destination support and quote limits apply.');
+  cell(s, 22, 1, '=IF(OR(B3="",B5="",B6="",B7="",B8="",B9="",B10=""),"Enter payout inputs above",INTENTS_QUOTE(B5,B6,B9,B7,B8,B3,VALUE(B10)))');
+  return workbook('International payouts', s);
+}
+
+const templates: readonly WorkbookTemplate[] = [
   { id: 'getting-started', name: 'Getting started', description: 'A five-minute editable introduction, starting offline.', preview: [['Input: a number', '5'], ['Your number + 1', '=B4+1'], ['Input: account', 'Balance (NEAR)']], createWorkbook: gettingStarted },
-  { id: 'account-balances', name: 'Account balances', description: 'Compare native and optional token balances for your accounts.', preview: [['Input: account', 'NEAR', 'Token'], ['Your account', 'Balance', 'Balance'], ['Total', 'NEAR only', '']], createWorkbook: accountBalances },
-  { id: 'dao-proposals', name: 'DAO proposal tracker', description: 'Read the first 100 proposals for your DAO.', preview: [['Input: DAO', ''], ['ID', 'Description', 'Status'], ['↓', 'Proposal results', '↓']], createWorkbook: daoProposals },
-  { id: 'contributor-payments', name: 'Contributor payments', description: 'Prepare exact DAO payments for deliberate review and signing.', preview: [['Reference', 'Recipient', 'Amount text'], ['Your inputs', 'Your inputs', 'Your inputs'], ['Prepared transfer', 'Recorded status', '']], createWorkbook: contributorPayments },
+  { id: 'contributor-payments', name: 'Team payroll', description: 'Calculate hours and rates, then review treasury payments.', preview: [['Reference', 'Team member', 'Amount'], ['Pay run', 'Recipient', 'Amount'], ['Treasury proposal', 'Status', '']], createWorkbook: () => paymentWorkbook() },
+  { id: 'invoices-expenses', name: 'Invoices & expenses', description: 'Track outstanding bills and due dates before preparing payments.', preview: [['Reference', 'Vendor', 'Amount'], ['Invoice', 'Recipient', 'Amount']], createWorkbook: () => paymentWorkbook('Invoices & expenses', 'vendor', ['Invoice / category', 'Due date (note)']) },
+  { id: 'community-budget', name: 'Community budget', description: 'Compare category budgets and commitments, then prepare spending.', preview: [['Reference', 'Recipient', 'Amount'], ['Community expense', 'Recipient', 'Amount']], createWorkbook: () => paymentWorkbook('Community budget', 'recipient', ['Purpose', 'Budget category']) },
+  { id: 'international-payouts', name: 'International payouts', description: 'Compare live NEAR Intents estimates and prepare a cross-chain payout.', preview: [['Origin asset', 'Destination asset'], ['Amount', 'Recipient'], ['Estimate', 'Treasury proposal']], createWorkbook: internationalPayouts },
+  { id: 'treasury-overview', name: 'Treasury overview', description: 'Inspect balances and proposals, and prepare compatible pool staking.', preview: [['Treasury', 'NEAR balance'], ['Proposal', 'Status']], createWorkbook: treasuryOverview },
+  { id: 'grants-rewards', name: 'Grants & rewards', description: 'Calculate milestone releases and track award proposals.', preview: [['Reference', 'Recipient', 'Award'], ['Grant', 'Recipient', 'Amount']], createWorkbook: () => paymentWorkbook('Grants & rewards', 'recipient', ['Program / grant', 'Award note']) },
+  { id: 'account-balances', name: 'Portfolio & balances', description: 'Track live NEAR, USDT and USDC across accounts with separate asset totals.', preview: [['Input: account', 'NEAR', 'Token'], ['Your account', 'Balance', 'Balance'], ['Total', 'NEAR only', '']], createWorkbook: accountBalances },
+  { id: 'dao-proposals', name: 'Proposal review', description: 'Read the proposal queue and prepare explicit voting decisions.', preview: [['Input: DAO', ''], ['ID', 'Description', 'Status'], ['↓', 'Proposal results', '↓']], createWorkbook: daoProposals },
 ];
+const galleryPreviews:Partial<Record<TemplateId,readonly (readonly string[])[]>>={
+ 'account-balances':[['Public accounts','USDT','USDC'],['Ref Finance','Live balance','Live balance'],['NEAR Intents','Live balance','Live balance']],
+ 'international-payouts':[['wNEAR → USDC','Input','Live output'],['Ethereum','1','INTENTS_QUOTE'],['Compare amounts','5','INTENTS_QUOTE']],
+ 'contributor-payments':[['Treasury','Live funds'],['Pay run','Payment proposals'],['Results','NS_RECEIPT']],
+ 'invoices-expenses':[['Treasury','Live funds'],['Due bills','Payment proposals'],['Receipts','Recorded attempts']],
+ 'community-budget':[['Live treasury','Budget coverage'],['Categories','Remaining funds'],['Payments','Payment proposals']],
+ 'treasury-overview':[['Ref Finance','Live balance'],['Proposals','SPUTNIK_PROPOSALS'],['Staking','Prepare proposal']],
+ 'grants-rewards':[['Treasury','Live funds'],['Milestone release','Payment proposal'],['Results','Submission receipt']],
+ 'dao-proposals':[['Public treasury','Live proposals'],['Proposal ID','Current status'],['Decision','SPUTNIK_VOTE']],
+};
+const galleryOrder:TemplateId[]=['getting-started','account-balances','international-payouts','contributor-payments','invoices-expenses','community-budget','treasury-overview','grants-rewards','dao-proposals'];
+export const WORKBOOK_TEMPLATES:readonly WorkbookTemplate[]=galleryOrder.map(id=>{
+ const template=templates.find(t=>t.id===id)!;
+ return {...template,preview:galleryPreviews[id]??template.preview,createWorkbook:()=>designTemplate(id,template.createWorkbook())};
+});
 export function getWorkbookTemplate(id: TemplateId): WorkbookTemplate {
   const template = WORKBOOK_TEMPLATES.find(t => t.id === id);
   if (!template) throw new Error('Unknown workbook template.');

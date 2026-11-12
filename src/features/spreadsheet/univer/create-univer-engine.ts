@@ -14,7 +14,7 @@ import type { IDisposable, IWorkbookData, Univer } from "@univerjs/core";
 import { LocaleType, createUniver, mergeLocales, defaultTheme } from "@univerjs/presets";
 import { BooleanNumber, IResourceManagerService } from '@univerjs/core';
 import { FunctionType } from '@univerjs/engine-formula';
-import { UniverSheetsCorePreset, CellAlertManagerService } from "@univerjs/preset-sheets-core";
+import { UniverSheetsCorePreset, CellAlertManagerService, IEditorBridgeService } from "@univerjs/preset-sheets-core";
 import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
 import {
   createCustomFunctionCatalog,
@@ -123,7 +123,7 @@ export function createUniverEngine(
   // Native async function classes retain cell identity and real error objects.
   // The preset registers them before workbook creation, including on reopen.
   univerAPI.createWorkbook(options.initialWorkbook ?? {});
-  registrations.push(registerCellErrorAlerts(univerAPI,univer.__getInjector().get(CellAlertManagerService),runtime));
+  registrations.push(registerCellErrorAlerts(univerAPI,univer.__getInjector().get(CellAlertManagerService),runtime,univer.__getInjector().get(IEditorBridgeService)));
   registrations.push(univerAPI.getFormula().calculationStart(() => { runtime.calculating = true; runtime.diagnostics.nextCalculation(); runtime.bindings.nextCalculation(); }));
   registrations.push(univerAPI.getFormula().calculationEnd(state => { runtime.calculating = state !== 3; }));
   for(const [command,title] of [['function:NEAR_BALANCE','Insert NEAR balance…'],['edit','Edit arguments…'],['inspect','Inspect blockchain cells / receipts'],['review','Review selected actions']]) {
@@ -135,7 +135,7 @@ export function createUniverEngine(
     else runtime.bindings.prune(readFormula);
   }));
   registrations.push(registerBalanceFormatting(univerAPI, univer.__getInjector().get(IResourceManagerService), options.initialWorkbook));
-  registrations.push(registerCalculationFeedback(univer));
+  registrations.push(registerCalculationFeedback(univer,runtime));
   registrations.push(registerBlockchainRibbon(univer,univerAPI));
   moveViewControlsToFooter(univer);
 

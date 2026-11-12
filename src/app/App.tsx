@@ -16,6 +16,7 @@ import type { WorkbookSession } from '../features/spreadsheet/univer/create-work
 import { useIntegrations } from './app-providers';
 import { TemplateDialogs } from '../features/templates/TemplateDialogs';
 import { createWelcomePreference } from '../features/templates/welcome-preference';
+import { HelpMenu } from './HelpMenu';
 
 export function App() {
   const [repository] = useState(()=>new DexieDocumentRepository());
@@ -31,10 +32,14 @@ export function App() {
   const [templateView, setTemplateView] = useState<'welcome' | 'templates' | null>(null);
   const welcomeConsidered = useRef(false);
   useEffect(() => {
-    if (welcomeConsidered.current || state.status !== 'ready' || !activeSession) return;
+    // Shown as soon as the workspace knows this is a new, saveable one. Gating
+    // on the editor session too would hold the welcome back until Univer has
+    // mounted and reached its steady stage, which is the slowest startup step
+    // and has nothing to do with whether the intro should appear.
+    if (welcomeConsidered.current || state.status !== 'ready') return;
     welcomeConsidered.current = true;
     if (state.isNewWorkspace && state.saveStatus !== 'error' && !welcomePreference.isDismissed()) setTemplateView('welcome');
-  }, [state.status, state.isNewWorkspace, state.saveStatus, activeSession, welcomePreference]);
+  }, [state.status, state.isNewWorkspace, state.saveStatus, welcomePreference]);
   const changeTemplateView = (view: 'welcome' | 'templates' | null) => {
     if (templateView === 'welcome') welcomePreference.dismiss();
     setTemplateView(view);
@@ -73,7 +78,8 @@ export function App() {
     <TableActions key={state.document?.documentId} workspace={workspace} wallet={wallet} activeSession={activeSession}>
     <header className="app-shell__header">
       <h1 className="brand" title="NearSheets"><img className="brand__mark" src={`${import.meta.env.BASE_URL}near-sheets-mark.svg`} width={32} height={27} alt=""/><span>NearSheets</span></h1>
-      <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document} onTemplates={() => changeTemplateView('templates')} onGettingStarted={() => { void workspace.createFromTemplate('getting-started'); }}/>
+      <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document} onTemplates={() => changeTemplateView('templates')} onWelcome={() => setTemplateView('welcome')}/>
+      <HelpMenu/>
       <button type="button" className={`account-control ${walletState.connection ? 'account-control--connected' : 'account-control--connect'}`} onClick={()=>{wallet.clearFeedback();setAccountOpen(true);}} aria-label={walletState.connection ? `Wallet account ${walletState.connection.accountId}` : 'Sign In'} title={walletState.connection?.accountId}>
         {walletState.connection ? <span className="account-control__wallet-icon" aria-hidden="true">{walletState.connection.walletIcon && walletState.connection.walletIcon !== failedWalletIcon ? <img src={walletState.connection.walletIcon} alt="" onError={() => setFailedWalletIcon(walletState.connection?.walletIcon ?? null)}/> : <WalletIcon size={20}/>}</span> : null}
         <span>{walletState.connection?.accountId ?? (walletState.status === 'connecting' ? 'Connecting…' : 'Sign In')}</span>
