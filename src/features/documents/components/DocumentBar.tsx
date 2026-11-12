@@ -10,6 +10,8 @@ import { FileTextIcon } from '@solar-icons/react/linear/file-text';
 import { PenIcon } from '@solar-icons/react/linear/pen';
 import { InfoCircleIcon } from '@solar-icons/react/linear/info-circle';
 import { StarsIcon } from '@solar-icons/react/linear/stars';
+import { PrinterIcon } from '@solar-icons/react/linear/printer';
+import { printSheet } from '../../spreadsheet/univer/print-sheet';
 import { DocumentPicker } from './DocumentPicker';
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -87,6 +89,16 @@ export function DocumentBar({ workspace, state, children, ribbonMenu, onTemplate
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handlePrint = () => {
+    try {
+      const sheet = workspace.getSession()?.getWorkbook()?.getActiveSheet();
+      if (!sheet || !document) throw new Error('Wait for the spreadsheet to finish opening, then try printing again.');
+      printSheet(sheet, document.title);
+    } catch (cause) {
+      workspace.reportError(cause instanceof Error ? cause.message : 'The print view could not be opened.');
+    }
   };
 
   const handleFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -174,6 +186,7 @@ export function DocumentBar({ workspace, state, children, ribbonMenu, onTemplate
         <Menubar.Separator className="menu-separator"/>
         <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportJson()}><DownloadIcon size={16}/>Export as JSON</Menubar.Item>
         <Menubar.Item className="menu-item" disabled={!document} onSelect={()=>void handleExportCsv()}><DownloadIcon size={16}/>Export as CSV (underlying values)</Menubar.Item>
+        <Menubar.Item className="menu-item" disabled={!document || state.status !== 'ready'} onSelect={handlePrint}><PrinterIcon size={16}/>Print…</Menubar.Item>
         <Menubar.Separator className="menu-separator"/>
         <Menubar.Item className="menu-item" onSelect={onWelcome}><StarsIcon size={16}/>Welcome and templates</Menubar.Item>
         <Menubar.Item className="menu-item" onSelect={()=>setAboutOpen(true)}><InfoCircleIcon size={16}/>About NearSheets</Menubar.Item>
