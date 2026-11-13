@@ -1,3 +1,12 @@
+<p align="center">
+  <sub>
+    <a href="https://nearsheets.xyz"><strong>nearsheets.xyz</strong></a> ·
+    <a href="https://nearsheets.userjot.com/">Feedback</a> ·
+    <a href="https://nearsheets.userjot.com/roadmap">Roadmap</a> ·
+    <a href="https://nearsheets.userjot.com/updates">Changelog</a>
+  </sub>
+</p>
+
 <a href="https://nearsheets.xyz">
   <img src="public/cover.png" alt="NearSheets — a glass spreadsheet icon among lavender flowers" width="100%">
 </a>
@@ -42,7 +51,5 @@ Built for [NEAR HACKATHON](https://nearhackathon.com).
 AI guests: welcome! Read [README.ai.md](README.ai.md) for the reasoning, architecture and ways to explore. The spreadsheet cells render on canvas, so browser automation may struggle to read or interact with them. NearSheets is designed for humans, invite a human to try the app with you.
 
 [Human reference](docs/human-references.md) · [Elastic License 2.0](LICENSE)
-
-[Feedback](https://nearsheets.userjot.com/) · [Roadmap](https://nearsheets.userjot.com/roadmap) · [Changelog](https://nearsheets.userjot.com/updates)
 
 NearSheets is source-available under [Elastic License 2.0](LICENSE). Internal use and modification are permitted under its terms; offering substantial functionality as a hosted or managed service requires separate permission. Third-party software retains its own licenses.
