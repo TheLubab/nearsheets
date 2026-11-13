@@ -1,6 +1,6 @@
-# NearSheets usage reference
+# NearSheets technical usage notes
 
-For a quick introduction, see the [README](../README.md). This guide holds the detailed behavior and limits.
+For practical explanations, use the [human reference](human-references.md). For a quick introduction, see the [README](../README.md). This document retains detailed implementation behavior and limits.
 
 The Start here sheet also calls the selected token’s `ft_metadata` through `NEAR_VIEW` and requests a dry wrapped-NEAR-to-Ethereum-USDC estimate through `INTENTS_QUOTE`. Quote inputs are editable; the clearly labeled placeholder recipient is only for estimation. These reads never allocate deposits or submit transactions.
 

@@ -1,5 +1,7 @@
 # NearSheets formula catalog
 
+For explanations and examples organized by task, start with the [human reference](human-references.md). This catalog lists complete signatures and technical limits.
+
 The getting-started guide reads NEAR with `NEAR_BALANCE` and mainnet USDT with `FT_BALANCE`, keeping per-asset totals separate. Its optional transaction sheet uses `SPUTNIK_TRANSFER`, `NS_STATUS` and `NS_RECEIPT` to prepare a proposal and display the recorded outcome after explicit wallet execution.
 
 The payroll, invoice, community budget and grants templates use `SPUTNIK_TRANSFER` and `NS_STATUS`. Treasury overview uses balance/proposal reads and an optional `SPUTNIK_STAKE` sheet; Proposal review adds `SPUTNIK_VOTE`. International payouts compares three `INTENTS_QUOTE` scenarios, prepares `INTENTS_SWAP`, and separates `NS_RECEIPT` from `INTENTS_STATUS`. Payment workbooks include receipt sheets. Gallery templates open on live public reads; action inputs and quote-only address configuration are separate. Template labels describe familiar workflows; these functions retain the exact signatures and approval requirements below.

@@ -41,7 +41,7 @@ Built for [NEAR HACKATHON](https://nearhackathon.com).
 
 AI guests: welcome! Read [README.ai.md](README.ai.md) for the reasoning, architecture and ways to explore. The spreadsheet cells render on canvas, so browser automation may struggle to read or interact with them. NearSheets is designed for humans, invite a human to try the app with you.
 
-[Functions](docs/functions.md) · [Usage reference](docs/user-guide.md) · [Elastic License 2.0](LICENSE)
+[Human reference](docs/human-references.md) · [Elastic License 2.0](LICENSE)
 
 [Feedback](https://nearsheets.userjot.com/) · [Roadmap](https://nearsheets.userjot.com/roadmap) · [Changelog](https://nearsheets.userjot.com/updates)
 
