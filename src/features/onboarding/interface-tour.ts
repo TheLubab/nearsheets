@@ -1,11 +1,12 @@
 import { driver } from 'driver.js';
-import type { Config, Driver } from 'driver.js';
+import type { Config, Driver, PopoverDOM } from 'driver.js';
 
 export const TOUR_ENDED_EVENT = 'nearsheets:tour-ended';
 let activeTours = 0;
 export const hasActiveTour = () => activeTours > 0;
 
 export interface InterfaceTourStep {
+  align?: 'start' | 'center' | 'end';
   element: string | (() => Element);
   text: string;
 }
@@ -21,10 +22,14 @@ export interface InterfaceTourOptions {
 export function startInterfaceTour({ steps, onStopped, onDismissed, onError, createDriver = driver }: InterfaceTourOptions) {
   let instance: Driver | undefined;
   let stopped = false;
+  let frame = 0;
+  let popover: PopoverDOM | undefined;
+  let previousBounds = '';
   activeTours++;
   const cleanup = () => {
     if (stopped) return;
     stopped = true;
+    cancelAnimationFrame(frame);
     activeTours--;
     instance?.destroy();
     window.dispatchEvent(new Event(TOUR_ENDED_EVENT));
@@ -36,7 +41,7 @@ export function startInterfaceTour({ steps, onStopped, onDismissed, onError, cre
   };
   try {
     instance = createDriver({
-      steps: steps.map(step => ({ element: step.element, popover: { description: step.text, side: 'bottom', align: 'start' } })),
+      steps: steps.map(step => ({ element: step.element, popover: { description: step.text, side: 'bottom', align: step.align ?? 'start' } })),
       animate: false, overlayOpacity: 0.3, stagePadding: 5, stageRadius: 6,
       popoverClass: 'nearsheets-guide',
       showProgress: true, progressText: '{{current}} of {{total}}',
@@ -44,6 +49,7 @@ export function startInterfaceTour({ steps, onStopped, onDismissed, onError, cre
       disableActiveInteraction: true,
       allowClose: true, overlayClickBehavior: 'none', allowKeyboardControl: true,
       waitForElement: 2500,
+      onPopoverRender: value => { popover = value; previousBounds = ''; },
       onElementMissing: () => { fail(); return false; },
       onDestroyed: (_element, _step, options) => {
         if (stopped) return;
@@ -53,6 +59,24 @@ export function startInterfaceTour({ steps, onStopped, onDismissed, onError, cre
       },
     });
     instance.drive();
+    // Ribbon tabs can move after first paint (fonts, File placement, overflow).
+    // Follow their actual bounds rather than retaining the initial arrow position.
+    const followTarget = () => {
+      if (stopped) return;
+      const target = instance?.getActiveElement();
+      if (target && popover) {
+        const rect = target.getBoundingClientRect();
+        const bounds = `${rect.left},${rect.top},${rect.width},${rect.height}`;
+        if (bounds !== previousBounds) { previousBounds = bounds; instance?.refresh(); }
+        const box = popover.wrapper.getBoundingClientRect();
+        const arrow = popover.arrow;
+        if (arrow.classList.contains('driver-popover-arrow-side-bottom') || arrow.classList.contains('driver-popover-arrow-side-top')) {
+          arrow.style.left = `${Math.max(16, Math.min(box.width - 26, rect.left + rect.width / 2 - box.left - 5))}px`;
+        }
+      }
+      frame = requestAnimationFrame(followTarget);
+    };
+    if (!stopped) frame = requestAnimationFrame(followTarget);
   } catch { fail(); }
   return cleanup;
 }
@@ -88,6 +112,7 @@ export function startInterfaceTourWhenReady(options: InterfaceTourOptions) {
 
 export const GETTING_STARTED_INTERFACE_STEPS: InterfaceTourStep[] = [
   { element: '.workbook-session [data-u-comp="ribbon-header-menu"] [role="tab"][title="Blockchain"]',
+    align: 'center',
     text: 'Use this tab to connect spreadsheet cells with NEAR data and actions.' },
   { element: '[data-guide-wallet]',
     text: 'Connect a wallet here when you need to review and sign an action. Reading and editing do not require sign-in.' },

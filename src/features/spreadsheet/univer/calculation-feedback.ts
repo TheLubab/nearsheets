@@ -25,7 +25,7 @@ export function observeCalculationFeedback(
 ) {
   let timer:ReturnType<typeof setTimeout>|undefined,active=false,visible=false,lastLabel='';
   let activity:ReadActivity=null;
-  const label=()=>activity==='blockchain'?'Fetching blockchain data…':activity==='intents'?'Fetching swap quotes…':'Calculating…';
+  const label=()=>activity==='blockchain'?'Querying blockchain…':activity==='intents'?'Fetching swap quotes…':'Calculating…';
   const show=()=>{
     const message=label();if(visible&&message===lastLabel)return;
     visible=true;lastLabel=message;

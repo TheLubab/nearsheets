@@ -28,7 +28,8 @@ function templateChoices() {
     .map(t => ({ template: t, icon: TEMPLATE_ICONS[t.id], summary: t.description }));
 }
 
-function Choice({ icon: Icon, title, summary, disabled, onSelect }: {
+function Choice({ icon: Icon, title, summary, disabled, onSelect, recommended }: {
+  recommended?: boolean;
   icon?: IconComponent;
   title: string;
   summary: string;
@@ -38,7 +39,7 @@ function Choice({ icon: Icon, title, summary, disabled, onSelect }: {
   return <button type="button" className={`template-choice${Icon ? '' : ' template-choice--plain'}`} disabled={disabled} onClick={onSelect}>
     {Icon ? <Icon size={20} aria-hidden="true"/> : null}
     <span className="template-choice__text">
-      <span className="template-choice__title">{title}</span>
+      <span className="template-choice__title">{title}{recommended ? <span className="template-choice__badge">Recommended</span> : null}</span>
       <span className="template-choice__summary">{summary}</span>
     </span>
   </button>;
@@ -110,7 +111,7 @@ export function WelcomeDialog({ workspace, open, onCreated, onUseTemplate, onGui
         Track balances, plan payments and submit proposals for approval, all from cells your team can work with.
       </p>
       <div className="template-dialog__choices">
-        <Choice icon={SquareAcademicCapIcon} title="Show me how" summary="Learn with an editable example."
+        <Choice recommended icon={SquareAcademicCapIcon} title="Show me how" summary="Learn with an editable example."
           disabled={!!creating} onSelect={() => void create('getting-started')}/>
         <Choice icon={ClipboardListIcon} title="Start with a template" summary="Explore payroll, budgets and treasury workflows."
           disabled={!!creating} onSelect={() => { setError(null); onUseTemplate(); }}/>

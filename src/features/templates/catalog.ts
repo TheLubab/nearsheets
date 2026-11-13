@@ -57,15 +57,28 @@ function gettingStarted() {
   headers(s, 5, ['Account', 'Balance (NEAR)', 'Balance (USDT)']);
   cell(s, 5, 3, '=IF(B4="usdt.tether-token.near","Balance (USDT)","Token balance")');
   s.cellData![4]![2]!.s = { bl: 1, bg: { rgb: '#E6DCF9' } };
-  ['root.near', 'social.near', 'ref-finance.sputnik-dao.near'].forEach((account, i) => {
+  ['binancecold3.near', 'dclv2.ref-labs.near', 'root.near', 'social.near', 'ref-finance.sputnik-dao.near'].forEach((account, i) => {
     const r = 6 + i;
     cell(s, r, 1, account, true);
     cell(s, r, 2, `=IF(OR(A${r}="",$B$3=""),"Enter account and network",NEAR_BALANCE(A${r},$B$3))`);
     cell(s, r, 3, `=IF(OR(A${r}="",$B$3="",$B$4=""),"Enter account, network and token",IF(AND($B$4="usdt.tether-token.near",$B$3<>"mainnet"),"USDT example uses mainnet",FT_BALANCE($B$4,A${r},$B$3)))`);
   });
-  cell(s, 9, 1, 'Totals by asset');
-  cell(s, 9, 2, '=IF(OR(A6="",A7="",A8="",B3=""),"Enter accounts and network",SUM(B6:B8))');
-  cell(s, 9, 3, '=IF(OR(A6="",A7="",A8="",B3="",B4=""),"Enter accounts, network and token",IF(AND(B4="usdt.tether-token.near",B3<>"mainnet"),"USDT example uses mainnet",SUM(C6:C8)))');
+  cell(s, 11, 1, 'Totals by asset');
+  cell(s, 11, 2, '=IF(OR(A6="",A7="",A8="",A9="",A10="",B3=""),"Enter accounts and network",SUM(B6:B10))');
+  cell(s, 11, 3, '=IF(OR(A6="",A7="",A8="",A9="",A10="",B3="",B4=""),"Enter accounts, network and token",IF(AND(B4="usdt.tether-token.near",B3<>"mainnet"),"USDT example uses mainnet",SUM(C6:C10)))');
+  line(s, 13, 'Read a smart contract.', true);
+  line(s, 14, 'This calls ft_metadata on the token contract above. Change B4 to inspect a different token.');
+  cell(s, 16, 1, '=IF(OR(B3="",B4=""),"Enter network and token",NEAR_VIEW(B4,"ft_metadata","{}",B3))');
+  line(s, 25, 'Estimate a cross-chain swap.', true);
+  line(s, 26, 'Compare wrapped NEAR with USDC on Ethereum. Change the amount below to fetch a new estimate.');
+  input(s, 28, 'amount of wrapped NEAR', '1');
+  input(s, 29, 'origin asset', 'nep141:wrap.near');
+  input(s, 30, 'output asset', 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near');
+  input(s, 31, 'destination chain', 'eth');
+  input(s, 32, 'quote-only recipient', '0x0000000000000000000000000000000000000001');
+  line(s, 34, 'The recipient above is a placeholder for this estimate. Leave A36:C60 free for results.');
+  cell(s, 36, 1, '=IF(OR(B28="",B29="",B30="",B31="",B32=""),"Enter quote inputs",INTENTS_QUOTE(B29,B30,B28,B31,B32,"near",100))');
+  line(s, 62, 'For a fresh estimate, select the quote and choose Blockchain → Refresh → Refresh selected reads. Use Refresh all workbook data to update everything.');
   const book = workbook('Getting started with NearSheets', s);
   const transaction = gettingStartedTransaction();
   book.sheetOrder.push(transaction.id!);
@@ -75,15 +88,15 @@ function gettingStarted() {
 
 function gettingStartedTransaction() {
   const s = sheet('Try a transaction');
-  line(s, 1, 'Optional: submit a payment proposal', true);
-  line(s, 2, 'This signs a real transaction to create a Sputnik treasury proposal. Use testnet to practice without spending mainnet funds.');
-  line(s, 3, '1. Fill in the yellow cells. You need proposal permission on the treasury and funds in your wallet for fees and the proposal bond.');
+  line(s, 1, 'Tutorial: Create a Trezu treasury payment proposal.', true);
+  line(s, 2, 'You need treasury proposal permission and wallet funds for fees and the proposal bond. The default network is testnet.');
+  line(s, 3, '1. Fill in the yellow cells.', true);
   input(s, 4, 'Sputnik treasury account');
   input(s, 5, 'network', 'testnet');
   input(s, 6, 'recipient account');
   input(s, 7, 'amount (NEAR)');
   input(s, 8, 'unique payment reference');
-  line(s, 9, 'Enter the exact amount as decimal text. Use a new reference for each new payment. Editing these cells does not submit anything.');
+  line(s, 9, 'Enter the exact amount as decimal text. Use a new reference for each new payment.');
   const guard = 'OR(B4="",B5="",B6="",B7="",B8="")';
   cell(s, 11, 1, 'Prepared proposal');
   cell(s, 11, 2, `=IF(${guard},"Enter all inputs above",SPUTNIK_TRANSFER(B8,B4,B6,B7,"near",B5))`);
@@ -92,7 +105,7 @@ function gettingStartedTransaction() {
   line(s, 14, '2. Connect your wallet using Sign In. Choose the same network as B5.', true);
   line(s, 15, 'Select B11, then choose Blockchain → Review actions. Check the treasury, recipient, exact amount, fees and proposal bond.');
   line(s, 17, '3. Choose Sign reviewed actions, then approve the request in your wallet if the details are correct.', true);
-  line(s, 18, 'You can cancel in the wallet. B12 shows the recorded outcome; the receipt appears below.');
+  line(s, 18, 'B12 shows the recorded outcome; the receipt appears below.');
   line(s, 20, 'Submitting a proposal does not pay the recipient. The treasury must approve and execute it under its own rules.');
   line(s, 21, 'If the outcome is uncertain, use Details to reconcile the transaction before trying again.');
   line(s, 23, 'Submission receipt. Leave the cells below empty for the result.', true);
