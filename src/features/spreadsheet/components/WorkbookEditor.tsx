@@ -1,6 +1,6 @@
 import type { ExecutionJournal } from '../../table/execution';
 import { useEffect, useRef, useState } from "react";
-import { loadingToast, TOAST_IDS } from "../../../components/ui/toast";
+import { WorkspaceLoading } from '../../../app/WorkspaceLoading';
 import type { WorkbookSnapshot } from "../model/workbook-snapshot";
 import type { WorkbookSession } from "../univer/create-workbook-session";
 import { createWorkbookSession } from "../univer/create-workbook-session";
@@ -21,6 +21,9 @@ export interface WorkbookEditorProps {
    * was mounted for, so a late callback from a replaced editor is detectable.
    */
   onSessionReady?: (session: WorkbookSession, documentId: string) => void;
+  onStartupError?: (error: string, documentId: string) => void;
+  /** A welcome/template dialog or parent loading screen already covers the editor. */
+  loadingCovered?: boolean;
 }
 
 /**
@@ -36,6 +39,8 @@ export function WorkbookEditor({
   executions,
   initialWorkbook,
   onSessionReady,
+  onStartupError,
+  loadingCovered = false,
 }: WorkbookEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<EditorStatus>("starting");
@@ -43,9 +48,11 @@ export function WorkbookEditor({
 
   // Keep the latest callback and snapshot without remounting on every render.
   const onSessionReadyRef = useRef(onSessionReady);
+  const onStartupErrorRef = useRef(onStartupError);
   useEffect(() => {
     onSessionReadyRef.current = onSessionReady;
-  }, [onSessionReady]);
+    onStartupErrorRef.current = onStartupError;
+  }, [onSessionReady, onStartupError]);
 
   const initialWorkbookRef = useRef(initialWorkbook);
   useEffect(() => {
@@ -61,12 +68,15 @@ export function WorkbookEditor({
     let active = true;
     let session: WorkbookSession | null = null;
 
-    // Startup progress is a toast, not a blocker over the grid. A short delay
-    // means an instant start shows nothing instead of blinking.
-    let finishStartupToast = loadingToast(
-      TOAST_IDS.engine,
-      "Starting spreadsheet engine…",
-    );
+    setStatus('starting');
+    setError(null);
+    const fail = (cause: unknown) => {
+      if (!active) return;
+      const message = cause instanceof Error ? cause.message : 'The editor could not start.';
+      setStatus('failed');
+      setError(message);
+      onStartupErrorRef.current?.(message, documentId);
+    };
 
     try {
       session = createWorkbookSession({
@@ -77,37 +87,22 @@ export function WorkbookEditor({
           if (!active) {
             return;
           }
-          setStatus("ready");
-          finishStartupToast();
           onSessionReadyRef.current?.(readySession, documentId);
+          setStatus("ready");
         },
       });
     } catch (cause) {
-      setStatus("failed");
-      setError(cause instanceof Error ? cause.message : "The editor could not start.");
-      // The failure stays on the canvas; a toast would only repeat it.
-      finishStartupToast();
+      fail(cause);
       return;
     }
 
-    setStatus("starting");
-    setError(null);
     // The lifecycle event resolves after the first paint; this also covers a
     // stage that was already reached during construction. A rejection (for
-    // example from the ready callback) must not leave the loading toast up.
-    void session.whenReady().catch((cause: unknown) => {
-      if (!active) {
-        return;
-      }
-      setStatus("failed");
-      setError(cause instanceof Error ? cause.message : "The editor could not start.");
-      finishStartupToast();
-    });
+    // example from the ready callback) becomes an actionable failure.
+    void session.whenReady().catch(fail);
 
     return () => {
       active = false;
-      // A replaced editor must not leave its startup toast behind.
-      finishStartupToast();
       session?.dispose();
     };
     // `documentId` is the identity of the open document. A new document must
@@ -123,12 +118,10 @@ export function WorkbookEditor({
         role="application"
         aria-label="Spreadsheet"
         aria-busy={status === "starting"}
+        inert={status !== 'ready'}
+        style={status !== 'ready' ? { visibility: 'hidden' } : undefined}
       />
-      {status === "failed" ? (
-        <div className="workbook-editor__failure" role="alert">
-          <p>{error ?? "The spreadsheet editor is unavailable."}</p>
-        </div>
-      ) : null}
+      {!loadingCovered && <WorkspaceLoading active={status !== 'ready'} error={status === 'failed' ? error : null}/>}
     </div>
   );
 }

@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%near-sheets-favicon.svg" />
     <title>NearSheets</title>
+    <link id="startup-photo" rel="preload" as="image" fetchpriority="high" />
+    <script>
+      // Choose once before loading the app; the loading screen reuses this URL.
+      const startupPhotos = ['startup-flowers.jpg', 'startup-lavender-field.jpg', 'startup-purple-flowers.jpg'];
+      document.getElementById('startup-photo').href = '%BASE_URL%' + startupPhotos[Math.floor(Math.random() * startupPhotos.length)];
+    </script>
   </head>
   <body>
     <div id="root"></div>

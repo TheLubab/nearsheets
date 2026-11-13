@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BehaviorSubject } from 'rxjs';
-import type { Config, Driver, HookOpts } from 'driver.js';
-import { GETTING_STARTED_INTERFACE_STEPS, hasActiveTour, startInterfaceTour } from '../src/features/onboarding/interface-tour';
+import type { Config, Driver, HookOpts, PopoverDOM } from 'driver.js';
+import { GETTING_STARTED_INTERFACE_STEPS, hasActiveTour, startInterfaceTour, startInterfaceTourWhenReady } from '../src/features/onboarding/interface-tour';
 import type { InterfaceTourOptions } from '../src/features/onboarding/interface-tour';
 import { blockchainToolTarget, registerBlockchainTour, REPLAY_BLOCKCHAIN_TOUR_EVENT } from '../src/features/onboarding/blockchain-tour';
 import { createTourPreference } from '../src/features/onboarding/tour-preference';
@@ -10,6 +10,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 function tourFixture() {
   vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
   let config: Config;
   let active = false;
   let instance: Driver;
@@ -25,6 +27,25 @@ function tourFixture() {
 }
 
 describe('short interface tours', () => {
+  it('focuses Next instead of close and cancels deferred focus when the tour ends', async () => {
+    const f = tourFixture();
+    const next = vi.fn(), close = vi.fn();
+    const popover = {
+      wrapper: { isConnected: true },
+      nextButton: { focus: next },
+      closeButton: { focus: close },
+    } as unknown as PopoverDOM;
+    f.config.onPopoverRender?.(popover, {} as HookOpts);
+    await Promise.resolve();
+    expect(next).toHaveBeenCalledWith({ preventScroll: true });
+    expect(close).not.toHaveBeenCalled();
+    next.mockClear();
+    f.config.onPopoverRender?.(popover, {} as HookOpts);
+    f.stop();
+    await Promise.resolve();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('shows only one short text per step and blocks activating highlighted controls', () => {
     const f = tourFixture();
     expect(f.config.steps).toHaveLength(3);
@@ -62,6 +83,42 @@ describe('short interface tours', () => {
     expect(hasActiveTour()).toBe(false);
     f.stop();
   });
+});
+
+it('waits for the loading screen to close even when the tour targets and canvas exist', () => {
+  vi.stubGlobal('window', new EventTarget());
+  let loading = true;
+  const target = { getBoundingClientRect: () => ({ width: 100, height: 200 }) };
+  vi.stubGlobal('document', {
+    body: {},
+    querySelector: (selector: string) => selector.includes('.workspace-loading') ? loading ? {} : null : target,
+    querySelectorAll: () => [target],
+  });
+  let changed!: MutationCallback;
+  vi.stubGlobal('MutationObserver', class {
+    constructor(callback: MutationCallback) { changed = callback; }
+    observe = vi.fn(); disconnect = vi.fn();
+  });
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++nextFrame, callback); return nextFrame; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  const flush = () => { for (const [id, callback] of [...frames]) { frames.delete(id); callback(0); } };
+  const drive = vi.fn(), destroy = vi.fn();
+  const stop = startInterfaceTourWhenReady({
+    steps: [{ element: '.target', text: 'Try this control.' }],
+    onStopped: vi.fn(), onError: vi.fn(),
+    createDriver: () => ({ drive, destroy } as unknown as Driver),
+  });
+  flush();
+  expect(drive).not.toHaveBeenCalled();
+  loading = false;
+  changed([], {} as MutationObserver);
+  flush();
+  expect(drive).toHaveBeenCalledOnce();
+  stop();
+  expect(destroy).toHaveBeenCalledOnce();
+  expect(frames.size).toBe(0);
 });
 
 function contextualFixture(preference = createTourPreference(() => ({ getItem: () => null, setItem: vi.fn() }))) {
@@ -102,8 +159,8 @@ describe('contextual Blockchain tour', () => {
     f.toolbar(true); f.mutation(); f.flush();
     expect(f.startTour).toHaveBeenCalledOnce();
     const steps = f.startTour.mock.calls[0]![0].steps;
-    expect(steps).toHaveLength(3);
-    expect(steps.map(step => step.text).join(' ')).toContain('Review actions');
+    expect(steps).toHaveLength(5);
+    expect(steps.map(step => step.text).join(' ')).toContain('what to sign');
     expect(steps.every(step => step.text.length < 150)).toBe(true);
     f.registration.dispose();
   });

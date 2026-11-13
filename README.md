@@ -18,6 +18,8 @@ NearSheets brings NEAR balances, shared treasury proposals and cross-chain trans
 
 **[Open nearsheets.xyz](https://nearsheets.xyz)** and choose **Show me how**. You'll get an editable workbook with live blockchain data and a short introduction. No account or wallet needed to explore. Already closed welcome? Use **Help → Getting started**.
 
+New visitors see welcome while the editor initializes behind it, without a preceding loading-message screen. Once welcome is dismissed, a locally bundled Unsplash photo and frosted loading panel appear below the header only if the editor and saving controls are still preparing. The panel offers reload and error details if opening fails. Later document switches use the same photo and glass loading panel; blockchain reads keep their own progress feedback.
+
 Try changing an account, adding a formula or opening a payroll template. The templates are starting points; you can build your own layout from a blank sheet. Your team's workflow doesn't have to fit somebody else's payment form.
 
 ## Why a spreadsheet

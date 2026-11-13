@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Dialog } from '../components/ui/dialog';
 import { Toaster } from '../components/ui/sonner';
-import { loadingToast, TOAST_IDS } from '../components/ui/toast';
+import { WorkspaceLoading } from './WorkspaceLoading';
 import { WalletIcon } from '@solar-icons/react/linear/wallet';
 import { env } from '../config/env';
 import { createDocumentWorkspace } from '../features/documents/application/document-workspace';
@@ -29,8 +29,11 @@ export function App() {
   const [failedWalletIcon, setFailedWalletIcon] = useState<string | null>(null);
   const [accountOpen,setAccountOpen]=useState(false);
   const [readyEditor,setReadyEditor]=useState<{documentId:string;session:WorkbookSession}|null>(null);
+  const [startupComplete, setStartupComplete] = useState(false);
+  const [startupError, setStartupError] = useState<string | null>(null);
   const activeSession=readyEditor?.documentId===state.document?.documentId?readyEditor?.session??null:null;
   const [welcomePreference] = useState(() => createWelcomePreference());
+  const [welcomePending, setWelcomePending] = useState(() => !welcomePreference.isDismissed());
   const [templateView, setTemplateView] = useState<'welcome' | 'templates' | null>(null);
   const [guideDocumentId, setGuideDocumentId] = useState<string | null>(null);
   const [guideTransactionSheet, setGuideTransactionSheet] = useState<{ documentId: string; sheetId: string } | null>(null);
@@ -49,23 +52,23 @@ export function App() {
     if (guideDocumentId && guideDocumentId !== state.document?.documentId) setGuideRequested(false);
   }, [guideDocumentId, state.document?.documentId]);
   useLayoutEffect(() => {
-    if (!guideRequested || !currentGuide || state.status !== 'ready' || templateView || accountOpen) return;
+    if (!guideRequested || !currentGuide || state.status !== 'ready' || !activeSession || !startupComplete || templateView || accountOpen) return;
     const transactionSheetId = guideTransactionSheet?.documentId === state.document?.documentId ? guideTransactionSheet?.sheetId : undefined;
     return startInterfaceTourWhenReady({
       steps: gettingStartedInterfaceSteps(transactionSheetId),
       onStopped: () => setGuideRequested(false),
       onError: message => workspace.reportError(message),
     });
-  }, [guideRequested, currentGuide, templateView, accountOpen, guideRun, workspace, state.status, state.document?.documentId, guideTransactionSheet]);
-  const welcomeConsidered = useRef(false);
-  useEffect(() => {
+  }, [guideRequested, currentGuide, activeSession, startupComplete, templateView, accountOpen, guideRun, workspace, state.status, state.document?.documentId, guideTransactionSheet]);
+  useLayoutEffect(() => {
     // Startup saves a blank workbook before the user chooses how to begin.
     // Reopening that workbook must not count as dismissing the welcome.
-    // No need to wait for the slower editor initialization to show the intro.
-    if (welcomeConsidered.current || state.status !== 'ready') return;
-    welcomeConsidered.current = true;
-    if (state.saveStatus !== 'error' && !welcomePreference.isDismissed()) setTemplateView('welcome');
-  }, [state.status, state.saveStatus, welcomePreference]);
+    // The modal covers the initializing editor; show it before editor readiness.
+    // Resolve this before paint so startup messages do not flash before welcome.
+    if (!welcomePending || state.status === 'loading') return;
+    if (state.status === 'ready' && state.saveStatus !== 'error') setTemplateView('welcome');
+    setWelcomePending(false);
+  }, [state.status, state.saveStatus, welcomePending]);
   const changeTemplateView = (view: 'welcome' | 'templates' | null) => {
     if (templateView === 'welcome') welcomePreference.dismiss();
     setTemplateView(view);
@@ -92,17 +95,9 @@ export function App() {
     const runtime = workspace.getSession()?.tableRuntime;
     if (runtime && state.document) runtime.executions = state.document.executions;
   }, [workspace,state.document]);
-  useEffect(() => {
-    // Document loading is a toast, not a centred placeholder. A fatal error
-    // still renders in the canvas because there is nothing else to show.
-    if (state.status !== 'loading') {
-      return;
-    }
-    return loadingToast(TOAST_IDS.documents, 'Opening documents…');
-  }, [state.status]);
   return <div className="app-shell">
     <TableActions key={state.document?.documentId} workspace={workspace} wallet={wallet} activeSession={activeSession}>
-    <header className="app-shell__header">
+    <header className="app-shell__header" inert={!startupComplete} data-editor-ready={!!activeSession}>
       <h1 className="brand" title="NearSheets"><img className="brand__mark" src={`${import.meta.env.BASE_URL}near-sheets-mark.svg`} width={32} height={27} alt=""/><span>NearSheets</span></h1>
       <DocumentBar workspace={workspace} state={state} ribbonMenu={state.status === 'ready' && !!state.document} onTemplates={() => changeTemplateView('templates')} onWelcome={() => setTemplateView('welcome')}/>
       <HelpMenu onGettingStarted={() => { void workspace.createFromTemplate('getting-started').then(created => { if (created) rememberGuide(true); }); }}
@@ -115,8 +110,17 @@ export function App() {
       <Dialog className="account-dialog" open={accountOpen} onOpenChange={open=>{if(!open)wallet.clearFeedback();setAccountOpen(open);}} title={walletState.connection ? 'Your account' : 'Continue with'} showClose={false} suspendModal={walletState.status === 'connecting'} initialFocusContent><WalletPanel wallet={wallet} state={walletState}/></Dialog>
     </header>
     <main className="app-shell__main">
-      {state.status === 'ready' && state.document ? <WorkbookEditor key={state.document.documentId} documentId={state.document.documentId} initialWorkbook={state.document.workbook} executions={state.document.executions} onSessionReady={(session,id)=>{workspace.attachSession(session,id);setReadyEditor({documentId:id,session});}}/> : null}
-      {state.status === 'error' ? <div className="workbook-status" role="alert">{state.notice?.message ?? 'Documents could not be opened.'}</div> : null}
+      {state.status === 'ready' && state.document ? <WorkbookEditor key={state.document.documentId} documentId={state.document.documentId} initialWorkbook={state.document.workbook} executions={state.document.executions} loadingCovered={!startupComplete || welcomePending || !!templateView}
+        onStartupError={(error,id)=>{if(workspace.getState().document?.documentId===id)setStartupError(error);}}
+        onSessionReady={(session,id)=>{
+          if(workspace.getState().document?.documentId!==id)return;
+          workspace.attachSession(session,id);
+          setReadyEditor({documentId:id,session});
+          setStartupError(null);
+          setStartupComplete(true);
+        }}/>:null}
+      {!welcomePending && !templateView && <WorkspaceLoading active={!startupComplete} error={state.status === 'error' ? state.notice?.message ?? 'Documents could not be opened.' : startupError}/>}
+      {startupComplete && state.status === 'error' && <WorkspaceLoading error={state.notice?.message ?? 'Documents could not be opened.'}/>}
     </main>
     </TableActions>
     <TemplateDialogs workspace={workspace} view={templateView} onViewChange={changeTemplateView} onGuideCreated={() => rememberGuide(true)}/>

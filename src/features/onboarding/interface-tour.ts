@@ -49,7 +49,16 @@ export function startInterfaceTour({ steps, onStopped, onDismissed, onError, cre
       disableActiveInteraction: true,
       allowClose: true, overlayClickBehavior: 'none', allowKeyboardControl: true,
       waitForElement: 2500,
-      onPopoverRender: value => { popover = value; previousBounds = ''; },
+      onPopoverRender: value => {
+        popover = value; previousBounds = '';
+        // Driver 1.11 focuses its first button after this hook (the close X).
+        // Move focus to the primary action before paint, including each new step.
+        queueMicrotask(() => {
+          if (!stopped && popover === value && value.wrapper.isConnected) {
+            value.nextButton.focus({ preventScroll: true });
+          }
+        });
+      },
       onElementMissing: () => { fail(); return false; },
       onDestroyed: (_element, _step, options) => {
         if (stopped) return;
@@ -81,14 +90,14 @@ export function startInterfaceTour({ steps, onStopped, onDismissed, onError, cre
   return cleanup;
 }
 
-/** Start on visible UI, without waiting for Univer's delayed Steady stage. */
+/** Wait for visible controls and for the loading screen to leave the workspace. */
 export function startInterfaceTourWhenReady(options: InterfaceTourOptions) {
   let stopped = false, frame = 0;
   let stopTour: (() => void) | undefined;
   const observer = new MutationObserver(() => schedule());
   const tryStart = () => {
     frame = 0;
-    if (stopped || stopTour || hasActiveTour() || document.querySelector('[role="dialog"], [role="menu"][data-state="open"]')) return;
+    if (stopped || stopTour || hasActiveTour() || document.querySelector('.workspace-loading, [role="dialog"], [role="menu"][data-state="open"]')) return;
     const target = options.steps[0]?.element;
     const element = typeof target === 'function' ? target() : target ? document.querySelector(target) : null;
     if (!element || !element.getBoundingClientRect().width) return;

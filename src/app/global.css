@@ -105,10 +105,42 @@ body { background: var(--background); color: var(--foreground); }
 .workbook-editor { flex: 1; position: relative; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-surface); }
 .workbook-editor__host { position: absolute; inset: 0; }
 .workbook-editor__host>* { height: 100%; }
-/* A failed start has no usable grid, so the message stays prominent. Startup
-   progress is reported by the toast layer instead of covering the canvas. */
-.workbook-editor__failure { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; background: var(--app-surface); color: var(--danger); font-size: 13px; text-align: center; }
-.workbook-editor__failure p { margin: 0; max-width: 46ch; }
+.workspace-loading { position: absolute; inset: 0; z-index: 10; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: center; overflow: hidden; padding: 32px 20px; isolation: isolate; background: #fff; }
+.workspace-loading__backdrop { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.workspace-loading[data-visible="false"] > * { visibility: hidden; }
+.workspace-loading[data-visible="true"][data-exiting="false"] { animation: workspace-loading-enter 250ms ease-out both; }
+.workspace-loading[data-exiting="true"] { pointer-events: none; animation: workspace-loading-exit 250ms ease-out forwards; }
+.workspace-loading:not([data-appearance="photo"]) .workspace-loading__photo { visibility: hidden; }
+.workspace-loading[data-appearance="fallback"] { font-family: "Segoe UI", system-ui, sans-serif; }
+.workspace-loading[data-visible="false"] .workspace-loading__pixels > span { animation: none; }
+.workspace-loading__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(4px); transform: scale(1.025); }
+.workspace-loading__backdrop::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: #ffffff18; backdrop-filter: saturate(125%); -webkit-backdrop-filter: saturate(125%); box-shadow: inset 0 1px 0 #ffffffb3, inset 0 0 0 1px #ffffff47, inset 0 0 60px #ffffff26; }
+.workspace-loading__panel { width: min(500px, 100%); min-width: 0; max-height: 100%; overflow: auto; aspect-ratio: 1.618; display: flex; flex-direction: column; justify-content: center; padding: 40px 32px; border: 1px solid #ffffffe6; border-radius: 26px; background: #ffffffbf; color: #26283d; text-align: center; box-shadow: 0 24px 80px #18253b26, inset 0 1px 0 #fff; backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }
+.workspace-loading__eyebrow { display: block; margin-bottom: 16px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #56546a; }
+.workspace-loading h2 { margin: 0; font-size: clamp(22px, 3vw, 30px); font-weight: 500; line-height: 1.25; letter-spacing: -.8px; text-wrap: balance; }
+.workspace-loading__message { display: grid; align-content: center; gap: 8px; min-height: 3.75em; }
+.workspace-loading__prefix { font-size: 18px; letter-spacing: -.3px; color: #56546a; }
+.workspace-loading__subject { font-size: clamp(21px, 2.7vw, 27px); }
+.workspace-loading p { font-size: 13px; line-height: 1.6; }
+.workspace-loading__status { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 24px 0 0; color: #56546a; }
+.workspace-loading__pixels { display: grid; grid-template-columns: repeat(3, 12px); grid-template-rows: repeat(3, 12px); gap: 6px; flex: none; }
+.workspace-loading__pixels > span { background: currentColor; opacity: .25; animation: workspace-pixel-pulse 1.4s ease-in-out infinite; }
+.workspace-loading__credit { position: absolute; bottom: 16px; right: 20px; padding: 6px 10px; border-radius: 20px; background: #15232b99; color: #fff; text-decoration: none; font-size: 11px; }
+.workspace-loading button { margin-top: 8px; padding: 10px 18px; border: 1px solid #d8d3e5; border-radius: 999px; background: #fff; color: #26283d; font: inherit; font-size: 13px; cursor: pointer; }
+.workspace-loading button:hover { background: #f0ebfa; }
+.workspace-loading :is(button,a,summary):focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.workspace-loading details { margin-top: 20px; font-size: 12px; text-align: left; overflow-wrap: anywhere; }
+.workspace-loading summary { cursor: pointer; }
+.workspace-loading details p { max-height: 120px; overflow: auto; }
+@keyframes workspace-pixel-pulse { 0%, 70%, 100% { opacity: .25; transform: scale(.8); } 35% { opacity: 1; transform: scale(1); } }
+@keyframes workspace-loading-exit { from { opacity: 1; filter: blur(0); } to { opacity: 0; filter: blur(8px); } }
+@keyframes workspace-loading-enter { from { opacity: 0; filter: blur(8px); } to { opacity: 1; filter: blur(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-loading[data-visible="true"][data-exiting="false"] { animation: none; }
+  .workspace-loading[data-exiting="true"] { animation: none; opacity: 0; }
+  .workspace-loading__pixels > span { animation: none; }
+  .workspace-loading__pixels > span { opacity: .7; }
+}
 /* Univer 1.4's non-menu cell alerts share this class signature. Keep their
    selection and dismissal behavior while matching the application chrome. */
 .univer-z-\[100\].univer-box-border.univer-rounded-lg.univer-bg-gray-0.univer-px-2.univer-py-1.univer-shadow {
@@ -236,6 +268,7 @@ body { background: var(--background); color: var(--foreground); }
 }
 .workbook-session [data-u-comp="ribbon-header-menu"] { position: relative; z-index: 2; height: 40px; overflow: visible; display: flex; align-items: flex-end; background: var(--top-area-background); }
 .app-shell__header .app-menubar--ribbon { position: absolute; top: 100%; left: 12px; height: 36px; }
+.app-shell__header[data-editor-ready="false"] .app-menubar { visibility: hidden; pointer-events: none; }
 .app-shell__header .app-menubar--ribbon > button { height: 32px; padding: 0 18px; border: 1px solid transparent; border-radius: 9999px; background: transparent; color: var(--muted-foreground); font: 500 14px "Inter Variable","Segoe UI",system-ui,sans-serif; line-height: 20px; box-shadow: none; cursor: pointer; }
 .app-shell__header .app-menubar--ribbon > button:hover, .app-shell__header .app-menubar--ribbon > button[data-state="open"] { background: var(--tab-hover-background); color: var(--foreground); }
 .app-shell__header .app-menubar--ribbon > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -4px; }
@@ -589,6 +622,15 @@ body { background: var(--background); color: var(--foreground); }
 /* Welcome: photograph beside the choices, stacked on narrow screens. */
 .welcome-dialog { width: min(760px, calc(100vw - 24px)); height: min(540px, 85dvh); display: grid; grid-template-columns: 1fr 1fr; }
 .welcome-dialog:focus { outline: none; }
+.welcome-dialog[data-state="open"] { animation: workspace-loading-enter 250ms ease-out both; }
+.welcome-dialog[data-state="closed"] { pointer-events: none; animation: workspace-loading-exit 250ms ease-out both; }
+.welcome-dialog-overlay[data-state="open"] { animation: welcome-backdrop-enter 250ms ease-out both; }
+.welcome-dialog-overlay[data-state="closed"] { animation: welcome-backdrop-exit 250ms ease-out both; }
+@keyframes welcome-backdrop-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes welcome-backdrop-exit { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .welcome-dialog[data-state], .welcome-dialog-overlay[data-state] { animation: none; }
+}
 .welcome-dialog__media { position: relative; margin: 0; overflow: hidden; background: var(--accent-soft); }
 /* Keep the eagerly loaded image beneath the video, including on playback failure. */
 .welcome-dialog__media :is(img, video) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 60%; }

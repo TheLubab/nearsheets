@@ -72,7 +72,7 @@ describe('calculation feedback', () => {
     const feedback=observeCalculationFeedback(progress,vi.fn(),reads);
     progress.next({count:3,done:0});reads.next('blockchain');
     vi.advanceTimersByTime(400);
-    expect(loading.mock.calls[0]?.[0]).toBe('Fetching blockchain data…');
+    expect(loading.mock.calls[0]?.[0]).toBe('Querying blockchain…');
     reads.next('blockchain');expect(loading).toHaveBeenCalledTimes(1);
     reads.next('intents');expect(loading.mock.lastCall?.[0]).toBe('Fetching swap quotes…');
     reads.next(null);expect(loading.mock.lastCall?.[0]).toBe('Calculating…');

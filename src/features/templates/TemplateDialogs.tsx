@@ -72,7 +72,7 @@ function Shell({ open, onOpenChange, className, children, withClose, initialFocu
   const contentRef = useRef<HTMLDivElement>(null);
   return <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="dialog-overlay"/>
+      <DialogPrimitive.Overlay className={`dialog-overlay${className === 'welcome-dialog' ? ' welcome-dialog-overlay' : ''}`}/>
       <DialogPrimitive.Content ref={contentRef} className={className} aria-describedby={undefined}
         onOpenAutoFocus={event => {
           if (initialFocusContent) { event.preventDefault(); contentRef.current?.focus(); }
