@@ -1,31 +1,54 @@
+/** Return to the homepage, without stale spreadsheet IDs or callback parameters. */
+export function localStateResetUrl(currentUrl: string): string {
+  return new URL('/', currentUrl).href;
+}
+
 async function clearDatabase(name: string) {
   await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open(name);
-    request.onerror = () => reject(request.error ?? new Error(`Could not open ${name}.`));
+    let settled = false;
+    let database: IDBDatabase | undefined;
+    let transaction: IDBTransaction | undefined;
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      database?.close();
+      if (error) reject(error); else resolve();
+    };
+    const timeout = setTimeout(() => {
+      try { transaction?.abort(); } catch { /* The transaction may have just completed. */ }
+      finish(new Error('Storage reset is waiting for another tab. Close other NearSheets tabs and try again.'));
+    }, 5000);
+    let request: IDBOpenDBRequest;
+    try { request = indexedDB.open(name); }
+    catch (cause) { finish(cause); return; }
+    let absent = false;
+    request.onupgradeneeded = event => {
+      if (event.oldVersion === 0) {
+        // Do not leave an empty version-1 schema where Dexie expects its stores.
+        absent = true;
+        database = request.result;
+        request.transaction?.abort();
+      }
+    };
+    request.onerror = () => absent ? finish() : finish(request.error ?? new Error('Could not open ' + name + '.'));
+    request.onblocked = () => finish(new Error('Close other NearSheets tabs and try the reset again.'));
     request.onsuccess = () => {
-      const database = request.result;
-      database.onversionchange = () => database.close();
+      database = request.result;
+      if (settled) { database.close(); return; }
+      database.onversionchange = () => database?.close();
       const stores = [...database.objectStoreNames];
-      if (!stores.length) { database.close(); resolve(); return; }
+      if (!stores.length) { finish(); return; }
       try {
-        const transaction = database.transaction(stores, 'readwrite');
-        transaction.oncomplete = () => { database.close(); resolve(); };
-        transaction.onabort = () => {
-          database.close();
-          reject(transaction.error ?? new Error(`Could not clear ${name}.`));
-        };
+        transaction = database.transaction(stores, 'readwrite');
+        transaction.oncomplete = () => finish();
+        transaction.onabort = () => finish(transaction?.error ?? new Error('Could not clear ' + name + '.'));
         for (const store of stores) transaction.objectStore(store).clear();
-      } catch (cause) { database.close(); reject(cause); }
+      } catch (cause) { finish(cause); }
     };
   });
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(name);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error(`Could not delete ${name}.`));
-    // Contents are already cleared. A surviving connection can delay removing
-    // the empty schema, but must not prevent the user from resetting local data.
-    request.onblocked = () => resolve();
-  });
+  // Clearing records is enough to reset state. deleteDatabase can remain queued
+  // behind another tab and block the homepage's next attempt to open storage.
 }
 
 /** Dev-only reset. Run before mounting the app so autosave cannot restore data. */
@@ -34,14 +57,17 @@ export async function purgeLocalState() {
     Promise.resolve().then(() => localStorage.clear()),
     Promise.resolve().then(() => sessionStorage.clear()),
     Promise.resolve().then(async () => {
-      const databases = await indexedDB.databases();
-      await Promise.all(databases.filter(db => db.name).map(db => clearDatabase(db.name!)));
+      const databases = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
+      const names = new Set(['near-sheets', 'trezu-sheets', ...databases.flatMap(db => db.name ? [db.name] : [])]);
+      await Promise.all([...names].map(clearDatabase));
     }),
     Promise.resolve().then(async () => {
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         await Promise.all(registrations.map(registration => registration.unregister()));
       }
+    }),
+    Promise.resolve().then(async () => {
       if ('caches' in globalThis) {
         await Promise.all((await caches.keys()).map(key => caches.delete(key)));
       }

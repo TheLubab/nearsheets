@@ -1,3 +1,4 @@
+import { createDocumentId } from './document-id';
 import type { ExecutionJournal } from '../../table/execution';
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
@@ -95,7 +96,7 @@ export function createDocumentEnvelope(
   return {
     format: DOCUMENT_FORMAT,
     schemaVersion: SCHEMA_VERSION,
-    documentId: options.documentId ?? globalThis.crypto.randomUUID(),
+    documentId: options.documentId ?? createDocumentId(),
     title: options.title,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -131,7 +132,7 @@ export function renameDocument(
 ): DocumentEnvelope {
   const trimmed = title.trim();
   if (trimmed.length === 0) {
-    throw new Error("A document title cannot be empty.");
+    throw new Error("A spreadsheet name cannot be empty.");
   }
   return {
     ...document,
@@ -206,7 +207,7 @@ export function createBlankDocument(
   options: { title?: string; documentId?: string; now?: Date } = {},
 ): DocumentEnvelope {
   return createDocumentEnvelope({
-    title: options.title ?? "Untitled workbook",
+    title: options.title ?? "Untitled spreadsheet",
     workbook,
     treasury,
     documentId: options.documentId,

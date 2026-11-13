@@ -126,16 +126,16 @@ export const GETTING_STARTED_INTERFACE_STEPS: InterfaceTourStep[] = [
   { element: '[data-guide-wallet]',
     text: 'Connect a wallet here when you need to review and sign an action. Reading and editing do not require sign-in.' },
   { element: '[data-document-menu-trigger]',
-    text: 'Workbooks save automatically in this browser. File lets you open saved workbooks, import files or export a backup.' },
+    text: 'Spreadsheets save automatically in this browser. File lets you open saved spreadsheets, import files or download a backup.' },
 ];
 
 export function gettingStartedInterfaceSteps(transactionSheetId?: string): InterfaceTourStep[] {
-  const steps = [...GETTING_STARTED_INTERFACE_STEPS, {
+  const steps = [{
     element: () => [...document.querySelectorAll('.workbook-session canvas')].find(canvas => canvas.getBoundingClientRect().height > 100)!,
     text: transactionSheetId
-      ? 'Continue with the guide in this sheet. Try the editable account and token inputs to see the balances change.'
-      : 'Your workbook holds live data, formulas and action drafts together. The cells remain yours to arrange and edit.',
-  }];
+      ? 'Start with these cells. Try the editable account and token inputs to see the balances change.'
+      : 'Use cells to combine live data, formulas and action drafts. Arrange this spreadsheet however you need.',
+  }, ...GETTING_STARTED_INTERFACE_STEPS];
   if (transactionSheetId) steps.push({
     element: `.workbook-session [data-u-comp="slide-tab-item"][data-id="${CSS.escape(transactionSheetId)}"]`,
     text: 'When you’re done here, open Try a transaction for the next guide. It walks through an optional payment proposal.',

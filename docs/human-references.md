@@ -31,7 +31,7 @@ You can replace literal arguments with cell references and use numeric results i
 Results are cached, so a displayed balance is not a continuous live feed.
 
 - **Blockchain → Refresh → Refresh selected reads** fetches new data for your selection.
-- **Refresh all workbook data** updates the workbook’s reads.
+- **Refresh all spreadsheet data** updates the workbook’s reads.
 - **Inspect** shows selected-cell details, errors and recorded results, with source information where available.
 
 Some functions return several cells. Leave room below and beside the formula for the result. Swap estimates use three columns; proposal lists use four.
@@ -105,9 +105,9 @@ Workbooks save automatically **in this browser, on this website’s origin**. An
 
 | What you need | Use |
 | --- | --- |
-| Reopen a locally saved workbook | **File → Open** |
-| Back up or transfer the whole workbook | **Export as JSON**, then import that file |
-| Share current values with another tool | **Export as CSV** |
+| Reopen a locally saved workbook | **File → Spreadsheets manager** |
+| Back up or transfer the whole workbook | **File → Download backup (.json)**, then import that file |
+| Share current values with another tool | **File → Download current sheet (.csv)** |
 | Produce a table printout or PDF | **File → Print…** |
 
 JSON retains sheets, formulas, formatting and execution history. CSV contains only the active sheet’s cached values; it loses formulas, other sheets and action history. XLSX import/export and shared cloud storage are not currently available.

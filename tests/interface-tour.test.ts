@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BehaviorSubject } from 'rxjs';
 import type { Config, Driver, HookOpts, PopoverDOM } from 'driver.js';
-import { GETTING_STARTED_INTERFACE_STEPS, hasActiveTour, startInterfaceTour, startInterfaceTourWhenReady } from '../src/features/onboarding/interface-tour';
+import { GETTING_STARTED_INTERFACE_STEPS, gettingStartedInterfaceSteps, hasActiveTour, startInterfaceTour, startInterfaceTourWhenReady } from '../src/features/onboarding/interface-tour';
 import type { InterfaceTourOptions } from '../src/features/onboarding/interface-tour';
 import { blockchainToolTarget, registerBlockchainTour, REPLAY_BLOCKCHAIN_TOUR_EVENT } from '../src/features/onboarding/blockchain-tour';
 import { createTourPreference } from '../src/features/onboarding/tour-preference';
@@ -27,6 +27,19 @@ function tourFixture() {
 }
 
 describe('short interface tours', () => {
+  it('starts with the cells, then Blockchain, wallet and File, before the optional transaction guide', () => {
+    const cells = { getBoundingClientRect: () => ({ height: 400 }) };
+    vi.stubGlobal('document', { querySelectorAll: () => [cells] });
+    vi.stubGlobal('CSS', { escape: (value: string) => value });
+    const steps = gettingStartedInterfaceSteps('transactions');
+    expect(typeof steps[0]!.element).toBe('function');
+    expect((steps[0]!.element as () => Element)()).toBe(cells);
+    expect(steps[1]!.element).toContain('Blockchain');
+    expect(steps[2]!.element).toBe('[data-guide-wallet]');
+    expect(steps[3]!.element).toBe('[data-document-menu-trigger]');
+    expect(steps[4]!.element).toContain('transactions');
+    expect(gettingStartedInterfaceSteps()).toHaveLength(4);
+  });
   it('focuses Next instead of close and cancels deferred focus when the tour ends', async () => {
     const f = tourFixture();
     const next = vi.fn(), close = vi.fn();

@@ -16,7 +16,7 @@ import type { MenuSchemaType } from '@univerjs/preset-sheets-core';
 export const BLOCKCHAIN_CATEGORIES = ([['read','Read data'],['prepare','Prepare action'],['track','Track results']] as const).map(([key,title])=>({key,title,entries:searchFunctions(title,'').map(f=>[f.name,f.title] as const)}));
 export const BLOCKCHAIN_TOOLS = [
  ...BLOCKCHAIN_CATEGORIES.map(category=>({key:category.key,title:category.title,group:'functions',command:'',hint:'Discover functions and edit arguments',entries:category.entries})),
- {key:'refresh',title:'Refresh',group:'manage',command:'refresh',hint:'Refresh reads without signing',entries:[['selected','Refresh selected reads'],['all','Refresh all workbook data']] as readonly (readonly [string,string])[]},
+ {key:'refresh',title:'Refresh',group:'manage',command:'refresh',hint:'Refresh reads without signing',entries:[['selected','Refresh selected reads'],['all','Refresh all spreadsheet data']] as readonly (readonly [string,string])[]},
  {key:'details',title:'Inspect',group:'manage',command:'inspect',hint:'Inspect selected cells and transaction receipts'},
  {key:'review',title:'Review actions',group:'execute',command:'review',hint:'Review every selected action before choosing a subset'},
 ];

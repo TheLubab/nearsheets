@@ -1,5 +1,4 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { AddSquareIcon } from '@solar-icons/react/linear/add-square';
 import { CloseIcon } from '@solar-icons/react/linear/close';
 import { ClipboardListIcon } from '@solar-icons/react/linear/clipboard-list';
 import { GraphUpIcon } from '@solar-icons/react/linear/graph-up';
@@ -13,7 +12,7 @@ import { WORKBOOK_TEMPLATES } from './catalog';
 import type { TemplateId } from './catalog';
 
 type IconComponent = ComponentType<{ size?: number | string; 'aria-hidden'?: boolean | 'true' | 'false' }>;
-export type TemplateDialogView = 'welcome' | 'templates' | null;
+export type TemplateDialogView = 'welcome' | 'templates' | 'documents' | null;
 
 /** Icons for the templates that have one. Copy comes from the catalog's own descriptions. */
 const TEMPLATE_ICONS: Partial<Record<TemplateId, IconComponent>> = {
@@ -61,40 +60,43 @@ function useTemplateCreation(workspace: DocumentWorkspace, onCreated: () => void
   return { creating, error, setError, create };
 }
 
-function Shell({ open, onOpenChange, className, children, withClose, initialFocusContent = false }: {
+function Shell({ open, onOpenChange, className, children, withClose, initialFocusContent = false, dismissible = true }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   className: string;
   children: React.ReactNode;
   withClose: boolean;
   initialFocusContent?: boolean;
+  dismissible?: boolean;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
-  return <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+  return <DialogPrimitive.Root open={open} onOpenChange={next => { if (next || dismissible) onOpenChange(next); }}>
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className={`dialog-overlay${className === 'welcome-dialog' ? ' welcome-dialog-overlay' : ''}`}/>
+      <DialogPrimitive.Overlay className={`dialog-overlay${className === 'welcome-dialog' ? ' welcome-dialog-overlay' : className === 'templates-dialog' ? ' templates-dialog-overlay' : ''}`}/>
       <DialogPrimitive.Content ref={contentRef} className={className} aria-describedby={undefined}
+        onInteractOutside={event => { if (!dismissible) event.preventDefault(); }}
+        onEscapeKeyDown={event => { if (!dismissible) event.preventDefault(); }}
         onOpenAutoFocus={event => {
           if (initialFocusContent) { event.preventDefault(); contentRef.current?.focus(); }
         }}>
         {children}
-        {withClose ? <DialogPrimitive.Close className="template-dialog__close" aria-label="Close"><CloseIcon size={16}/></DialogPrimitive.Close> : null}
+        {withClose && dismissible ? <DialogPrimitive.Close className="template-dialog__close" aria-label="Close"><CloseIcon size={16}/></DialogPrimitive.Close> : null}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   </DialogPrimitive.Root>;
 }
 
 /** The welcome window: animated lavender beside the three ways to start. */
-export function WelcomeDialog({ workspace, open, onCreated, onUseTemplate, onGuideCreated }: {
+export function WelcomeDialog({ workspace, open, onCreated, onDocuments, onGuideCreated }: {
   workspace: DocumentWorkspace;
   open: boolean;
   onCreated(): void;
-  onUseTemplate(): void;
+  onDocuments(): void;
   onGuideCreated?(): void;
 }) {
   const { creating, error, setError, create } = useTemplateCreation(workspace, () => { onGuideCreated?.(); onCreated(); });
   const [videoPlaying, setVideoPlaying] = useState(false);
-  return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onCreated(); } }} className="welcome-dialog" withClose={!creating} initialFocusContent>
+  return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onCreated(); } }} className="welcome-dialog" withClose={!creating} dismissible={!!workspace.getState().document && !creating} initialFocusContent>
     <div className="welcome-dialog__media">
       <img src={`${import.meta.env.BASE_URL}lavender-field.jpg`} alt="" width={1068} height={778} loading="eager" fetchPriority="high" decoding="async"/>
       <video className={videoPlaying ? 'welcome-dialog__video--playing' : undefined}
@@ -111,12 +113,10 @@ export function WelcomeDialog({ workspace, open, onCreated, onUseTemplate, onGui
         Track balances, plan payments and submit proposals for approval, all from cells your team can work with.
       </p>
       <div className="template-dialog__choices">
-        <Choice recommended icon={SquareAcademicCapIcon} title="Show me how" summary="Learn with an editable example."
+        <Choice recommended icon={SquareAcademicCapIcon} title="Try the guided demo" summary="Learn with an editable example."
           disabled={!!creating} onSelect={() => void create('getting-started')}/>
-        <Choice icon={ClipboardListIcon} title="Start with a template" summary="Explore payroll, budgets and treasury workflows."
-          disabled={!!creating} onSelect={() => { setError(null); onUseTemplate(); }}/>
-        <Choice icon={AddSquareIcon} title="Open a blank sheet" summary="Build your own workbook."
-          disabled={!!creating} onSelect={onCreated}/>
+        <Choice icon={ClipboardListIcon} title="Spreadsheets manager" summary="Open, create or import a spreadsheet."
+          disabled={!!creating} onSelect={() => { setError(null); onDocuments(); }}/>
       </div>
       <p className="welcome-dialog__reassurance">Free to use. No sign-in required to view or edit spreadsheets.</p>
       {creating ? <p className="template-dialog__status" role="status">Creating spreadsheet…</p> : null}
@@ -147,17 +147,19 @@ function TemplateCard({ template, disabled, onSelect }: {
 }
 
 /** The template picker keeps the same one-step creation flow as the welcome. */
-export function TemplatesDialog({ workspace, open, onCreated }: {
+export function TemplatesDialog({ workspace, open, onCreated, onBack }: {
   workspace: DocumentWorkspace;
   open: boolean;
   onCreated(): void;
+  onBack(): void;
 }) {
   const { creating, error, setError, create } = useTemplateCreation(workspace, onCreated);
   const templates = templateChoices();
-  return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onCreated(); } }} className="templates-dialog" withClose={!creating}>
+  return <Shell open={open} onOpenChange={next => { if (!next && !creating) { setError(null); onBack(); } }} className="templates-dialog" withClose={!creating}>
     <div className="templates-dialog__body">
+      <button className="templates-dialog__back" disabled={!!creating} onClick={onBack}>← Spreadsheets manager</button>
       <DialogPrimitive.Title className="templates-dialog__title">Start from a template</DialogPrimitive.Title>
-      <p className="templates-dialog__description">Choose a starting point. You can make it your own in the spreadsheet.</p>
+      <p className="templates-dialog__description">Pick a starting point and make it your own.</p>
       <div className="templates-dialog__grid">
         {templates.map(({ template }) => <TemplateCard key={template.id} template={template}
           disabled={!!creating} onSelect={() => void create(template.id)}/>)}
@@ -177,7 +179,7 @@ export function TemplateDialogs({ workspace, view, onViewChange, onGuideCreated 
 }) {
   const close = useCallback(() => onViewChange(null), [onViewChange]);
   return <>
-    <WelcomeDialog workspace={workspace} open={view === 'welcome'} onCreated={close} onUseTemplate={() => onViewChange('templates')} onGuideCreated={onGuideCreated}/>
-    <TemplatesDialog workspace={workspace} open={view === 'templates'} onCreated={close}/>
+    <WelcomeDialog workspace={workspace} open={view === 'welcome'} onCreated={close} onDocuments={() => onViewChange('documents')} onGuideCreated={onGuideCreated}/>
+    <TemplatesDialog workspace={workspace} open={view === 'templates'} onCreated={close} onBack={() => onViewChange('documents')}/>
   </>;
 }

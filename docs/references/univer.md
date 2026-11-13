@@ -3757,3 +3757,7 @@ A demo:
 ## MSO
 
 `````
+
+## Installed-release compatibility note: local UI lifecycle patch (2026-11-13)
+
+This is an application maintenance note, separate from the pinned upstream snapshots above. Installed `@univerjs/ui` 1.4.0 `SingleUnitUIController._bootstrapWorkbench` awaits Ready and then queues rendering after 300ms. Its disposal deletes `_renderManagerService`; a delayed React bootstrap callback or a Ready continuation arriving after disposal can otherwise schedule work against those deleted services, producing the reported `getRenderAll` error. `patches/@univerjs__ui@1.4.0.patch`, registered through pnpm's patchedDependencies and lockfile, adds `_disposed` guards before initialization, after the await, and in the delayed render/steady callbacks. It covers the ES, CommonJS and default JS entries used by the installed release. Mocked lifecycle tests exercise the actual patched controller for late callbacks, disposal during Ready and cancellation during the render delay. Recheck this patch when upgrading Univer. No upstream snapshot content or provenance was changed.

@@ -21,11 +21,22 @@ export interface DocumentRepository {
   getMostRecent(): Promise<DocumentEnvelope | null>;
   /** Creates or replaces the document with the same `documentId`. */
   save(document: DocumentEnvelope): Promise<void>;
+  /** Inserts a fresh identity; false means that identity already exists. */
+  insert?(document: DocumentEnvelope): Promise<boolean>;
   remove(documentId: string): Promise<void>;
 }
 
 export class MemoryDocumentRepository implements DocumentRepository {
   private readonly documents = new Map<string, DocumentEnvelope>();
+  private readonly inserting = new Set<string>();
+
+  async insert(document: DocumentEnvelope): Promise<boolean> {
+    const id = document.documentId;
+    if (this.documents.has(id) || this.inserting.has(id)) return false;
+    this.inserting.add(id);
+    try { await this.save(document); return true; }
+    finally { this.inserting.delete(id); }
+  }
 
   async list(): Promise<DocumentSummary[]> {
     return [...this.documents.values()]

@@ -739,3 +739,152 @@ body { background: var(--background); color: var(--foreground); }
 .review-table small { display: block; color: var(--muted-foreground); }
 .review-table td:last-child { min-width: 230px; }
 .review-table pre { max-width: 420px; }
+
+/* Spreadsheet manager: Welcome's soft choices, with a quiet recent-file list. */
+.dialog-content.spreadsheet-manager { width: min(740px, calc(100vw - 24px)); padding: 32px; border-radius: 14px; }
+.spreadsheet-manager .dialog-title { font-size: 19px; line-height: 1.25; letter-spacing: -.35px; margin-bottom: 24px; }
+.dialog-content.spreadsheet-manager button:not(.dialog-close) { border: 0; background: transparent; box-shadow: none; font: inherit; text-shadow: none; }
+.dialog-content.spreadsheet-manager button:not(.dialog-close):hover:not(:disabled) { background: var(--muted); box-shadow: none; }
+.spreadsheet-manager__actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 32px; }
+.dialog-content.spreadsheet-manager button.spreadsheet-manager__choice { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 18px; border-radius: 10px; background: var(--muted); text-align: left; }
+.spreadsheet-manager__choice > svg { color: var(--link); flex: none; }
+.spreadsheet-manager__choice > span { display: grid; gap: 4px; }
+.spreadsheet-manager__choice strong { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.spreadsheet-manager__choice small { color: var(--muted-foreground); font-size: 12px; line-height: 1.45; }
+.spreadsheet-manager__section { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 0 10px; }
+.spreadsheet-manager__section h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.spreadsheet-manager__section > span { color: var(--muted-foreground); font-size: 11px; }
+.spreadsheet-manager__list { padding: 0; margin: 0; list-style: none; max-height: 36dvh; overflow: auto; scrollbar-gutter: stable; }
+.spreadsheet-manager__row { border-radius: 9px; }
+.spreadsheet-manager__file { display: flex; align-items: center; gap: 12px; height: 60px; padding: 4px 8px; border-radius: 9px; }
+.spreadsheet-manager__file-icon { width: 28px; height: 40px; flex: none; display: grid; place-items: center; color: var(--link); }
+.dialog-content.spreadsheet-manager :is(button,a).spreadsheet-manager__open { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; min-height: 52px; flex: 1; padding: 8px 0; text-align: left; }
+.dialog-content.spreadsheet-manager :is(button,a).spreadsheet-manager__open:hover:not(:disabled) { background: transparent; }
+.spreadsheet-manager__filename { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.spreadsheet-manager__filename strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spreadsheet-manager__badge { flex: none; padding: 2px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--link); font-size: 10px; font-weight: 500; }
+.spreadsheet-manager__open time { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }
+.spreadsheet-manager__row-actions { flex: none; }
+.dialog-content.spreadsheet-manager button.spreadsheet-manager__more { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; padding: 0; color: var(--muted-foreground); transition: background-color .15s, color .15s; }
+.dialog-content.spreadsheet-manager button.spreadsheet-manager__more:hover:not(:disabled), .dialog-content.spreadsheet-manager button.spreadsheet-manager__more[data-state="open"] { background: var(--accent-soft); color: var(--foreground); }
+.spreadsheet-manager-menu { z-index: 11002; min-width: 150px; }
+.spreadsheet-manager-menu .spreadsheet-manager-menu__delete { color: var(--danger); }
+.spreadsheet-manager__edit { margin: 0 8px 12px 48px; padding: 12px; border-radius: 9px; background: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.spreadsheet-manager__edit label { display: grid; flex: 1 1 200px; gap: 6px; font-size: 12px; }
+.spreadsheet-manager__edit input { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 7px; background: var(--app-surface); color: var(--foreground); font: inherit; }
+.spreadsheet-manager__edit p { flex-basis: 100%; margin: 0 0 4px; line-height: 1.55; overflow-wrap: anywhere; }
+.dialog-content.spreadsheet-manager .spreadsheet-manager__edit button { border-radius: 7px; padding: 8px 12px; }
+.dialog-content.spreadsheet-manager button.spreadsheet-manager__save { color: var(--primary-foreground); background: var(--primary); }
+.dialog-content.spreadsheet-manager button.spreadsheet-manager__save:hover:not(:disabled) { background: var(--primary-hover); }
+.dialog-content.spreadsheet-manager button.spreadsheet-manager__delete { color: var(--danger); background: var(--danger-surface); }
+.spreadsheet-manager__empty { min-height: 155px; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; color: var(--muted-foreground); }
+.spreadsheet-manager__empty strong { color: var(--foreground); font-size: 14px; font-weight: 500; }
+.spreadsheet-manager__empty p { margin: 0; line-height: 1.55; font-size: 12px; }
+.spreadsheet-manager__footer { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; line-height: 1.6; }
+.spreadsheet-manager__footer > span { padding: 0 4px; }
+@media (max-width: 540px) {
+  .dialog-content.spreadsheet-manager { padding: 24px 20px; }
+  .spreadsheet-manager__actions { grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 24px; }
+  .dialog-content.spreadsheet-manager button.spreadsheet-manager__choice { flex-direction: row; align-items: center; padding: 14px 16px; gap: 14px; }
+  .dialog-content.spreadsheet-manager :is(button,a).spreadsheet-manager__open { flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; }
+  .spreadsheet-manager__section > span { display: none; }
+  .spreadsheet-manager__edit { margin-left: 8px; }
+  .spreadsheet-manager__list { max-height: 30dvh; }
+}
+.templates-dialog__back { align-self: start; margin-bottom: 16px; padding: 6px 0; background: transparent; border: 0; color: var(--link); cursor: pointer; }
+.spreadsheet-empty { margin: 15vh auto; text-align: center; color: var(--muted-foreground); }
+
+/* Match Welcome's fade/blur transitions; Radix Presence retains the exit state. */
+.spreadsheet-manager[data-state="open"] { animation: workspace-loading-enter 250ms ease-out both; }
+.spreadsheet-manager[data-state="closed"] { pointer-events: none; animation: workspace-loading-exit 250ms ease-out both; }
+.spreadsheet-manager-overlay[data-state="open"] { animation: welcome-backdrop-enter 250ms ease-out both; }
+.spreadsheet-manager-overlay[data-state="closed"] { animation: welcome-backdrop-exit 250ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .spreadsheet-manager[data-state], .spreadsheet-manager-overlay[data-state] { animation: none; }
+  .dialog-content.spreadsheet-manager button.spreadsheet-manager__more { transition: none; }
+}
+
+.dialog-content.spreadsheet-manager a.spreadsheet-manager__open { color: var(--foreground); text-decoration: none; font: inherit; border-radius: 6px; }
+.dialog-content.spreadsheet-manager a.spreadsheet-manager__open[aria-disabled="true"] { opacity: .45; cursor: default; }
+.spreadsheet-link-error__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+
+/* Homepage dialogs share the real grid chrome without opening a saved file. */
+.home-table-preview { display: flex; flex: 1; min-width: 0; min-height: 0; pointer-events: none; }
+
+.help-menu__content { max-height: calc(100dvh - 72px); overflow-y: auto; }
+.help-menu__label { padding: 7px 10px 3px; color: var(--muted-foreground); font-size: 11px; font-weight: 500; }
+
+.dialog-content.about-nearsheets { width: min(620px, calc(100vw - 24px)); padding: 32px; border-radius: 14px; }
+.about-nearsheets .dialog-title { font-size: 19px; letter-spacing: -.35px; }
+.about-nearsheets__intro { display: flex; align-items: center; gap: 20px; margin: 24px 0 14px; }
+.about-nearsheets__intro img { flex: none; }
+.about-nearsheets__intro p { margin: 0; line-height: 1.65; }
+.about-nearsheets__note { color: var(--muted-foreground); font-size: 12px; line-height: 1.65; margin: 0 0 24px; }
+.about-nearsheets__links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.about-nearsheets__links a { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 9px; background: var(--muted); text-decoration: none; }
+.about-nearsheets__links a:hover { background: var(--accent-soft); }
+.about-nearsheets__links svg { flex: none; }
+.about-nearsheets__links a > span:not(.about-nearsheets__external) { display: grid; gap: 3px; min-width: 0; }
+.about-nearsheets__links strong { font-size: 13px; font-weight: 600; color: var(--foreground); }
+.about-nearsheets__links small { font-size: 11px; line-height: 1.45; color: var(--muted-foreground); }
+.about-nearsheets__external { margin-left: auto; flex: none; color: var(--muted-foreground); }
+.about-nearsheets__license { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.about-nearsheets__license h3 { margin: 0 0 7px; font-size: 12px; font-weight: 600; }
+.about-nearsheets__license p { margin: 0 0 6px; font-size: 12px; line-height: 1.6; }
+.about-nearsheets__license small { color: var(--muted-foreground); font-size: 11px; line-height: 1.6; }
+.about-nearsheets__credits { margin-top: 18px; color: var(--muted-foreground); font-size: 11px; line-height: 1.65; }
+.about-nearsheets__credits summary { cursor: pointer; width: fit-content; }
+.about-nearsheets__version { margin-top: 18px; font-size: 11px; color: var(--muted-foreground); }
+@media (max-width: 480px) {
+  .dialog-content.about-nearsheets { padding: 24px; }
+  .about-nearsheets__links { grid-template-columns: minmax(0, 1fr); }
+}
+
+.spreadsheet-manager__inline-rename, .spreadsheet-manager__inline-delete { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.spreadsheet-manager__inline-rename { flex: 1; }
+.spreadsheet-manager__inline-rename input { min-width: 0; flex: 1; padding: 7px 9px; border: 1px solid var(--input-border); border-radius: 7px; background: var(--app-surface); color: var(--foreground); font: inherit; }
+.dialog-content.spreadsheet-manager :is(.spreadsheet-manager__inline-rename, .spreadsheet-manager__inline-delete) button { flex: none; padding: 7px 9px; border-radius: 7px; font-size: 12px; }
+.dialog-content.spreadsheet-manager .spreadsheet-manager__inline-delete button.spreadsheet-manager__delete {
+  border: 0;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  transition: background-color .15s;
+}
+.dialog-content.spreadsheet-manager .spreadsheet-manager__inline-delete button.spreadsheet-manager__delete:hover:not(:disabled) {
+  background: #921d14;
+  color: #fff;
+}
+.dialog-content.spreadsheet-manager .spreadsheet-manager__inline-delete button.spreadsheet-manager__delete:active:not(:disabled) { background: #79170f; }
+@media (prefers-reduced-motion: reduce) {
+  .dialog-content.spreadsheet-manager .spreadsheet-manager__inline-delete button.spreadsheet-manager__delete { transition: none; }
+}
+@media (max-width: 540px) {
+  .spreadsheet-manager__inline-delete { gap: 4px; }
+  .spreadsheet-manager__file:has(.spreadsheet-manager__inline-delete) .spreadsheet-manager__open time { display: none; }
+}
+
+/* Template selector: calm sheet previews and the same motion as the manager. */
+.templates-dialog[data-state="open"] { animation: workspace-loading-enter 250ms ease-out both; }
+.templates-dialog[data-state="closed"] { pointer-events: none; animation: workspace-loading-exit 250ms ease-out both; }
+.templates-dialog-overlay[data-state="open"] { animation: welcome-backdrop-enter 250ms ease-out both; }
+.templates-dialog-overlay[data-state="closed"] { animation: welcome-backdrop-exit 250ms ease-out both; }
+.templates-dialog__body { padding: 32px; }
+.templates-dialog__back { margin: 0 0 20px; padding: 4px 0; font-size: 12px; font-weight: 500; }
+.templates-dialog__description { margin-bottom: 22px; }
+.templates-dialog__grid { gap: 14px; }
+.template-card { border-radius: 12px; border-color: var(--border); }
+.template-card:hover:not(:disabled) { border-color: var(--input-border); box-shadow: none; }
+.templates-dialog .template-card:focus-visible { outline-offset: -3px; }
+.template-card__preview { height: 112px; padding: 20px 24px 0; }
+.template-card__sheet { max-width: 270px; border-radius: 8px 8px 0 0; }
+.template-card__details { min-height: 78px; align-content: start; gap: 5px; padding: 15px 16px 17px; }
+@media (max-width: 540px) {
+  .templates-dialog__body { padding: 24px; }
+  .templates-dialog__grid { gap: 12px; }
+  .template-card__preview { height: 88px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .templates-dialog[data-state], .templates-dialog-overlay[data-state] { animation: none; }
+  .template-card { transition: none; }
+}

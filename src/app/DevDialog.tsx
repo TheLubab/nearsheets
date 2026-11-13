@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Dialog } from '../components/ui/dialog';
-import { purgeLocalState } from './purge-local-state';
+import { localStateResetUrl, purgeLocalState } from './purge-local-state';
 
 export function DevDialog() {
   const [busy, setBusy] = useState(false);
@@ -12,9 +12,7 @@ export function DevDialog() {
     setBusy(true); setError(null);
     try {
       await purgeLocalState();
-      const url = new URL(location.href);
-      url.searchParams.delete('dev');
-      location.replace(url.href);
+      location.replace(localStateResetUrl(location.href));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Local state could not be cleared. Try again.');
       running.current = false;
@@ -22,7 +20,7 @@ export function DevDialog() {
     }
   };
   return <Dialog open onOpenChange={() => {}} title="Developer tools" showClose={false}
-    description="Permanently delete this website’s local workbooks, preferences and browser storage, then reload.">
+    description="Permanently delete this website’s local spreadsheets, preferences and browser storage, then reload.">
     <button type="button" disabled={busy} onClick={() => void purge()}>{busy ? 'Purging local state…' : 'Purge local state'}</button>
     {error ? <p role="alert">{error}</p> : null}
   </Dialog>;

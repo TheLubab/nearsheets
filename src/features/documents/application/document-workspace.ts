@@ -1,4 +1,5 @@
 import type { Execution } from '../../table/execution';
+import { createDocumentId } from '../model/document-id';
 import { getWorkbookTemplate } from '../../templates/catalog';
 import { toast } from '../../../components/ui/toast';
 import type { TemplateId } from '../../templates/catalog';
@@ -36,7 +37,7 @@ import {
  * It is built structurally so creating a document never requires a mounted
  * editor; the editor adopts the snapshot on its next mount.
  */
-export function createBlankWorkbook(name = "Untitled workbook"): WorkbookSnapshot {
+export function createBlankWorkbook(name = "Untitled spreadsheet"): WorkbookSnapshot {
   const sheetId = `sheet-${globalThis.crypto.randomUUID()}`;
   return {
     id: `workbook-${globalThis.crypto.randomUUID()}`,
@@ -54,38 +55,21 @@ export function createBlankWorkbook(name = "Untitled workbook"): WorkbookSnapsho
   };
 }
 
-/** Fixed id for the generated first document, so a raced startup cannot duplicate it. */
-export const STARTER_DOCUMENT_ID = "nearsheets-starter-document";
-
-/** The first document this application ever creates. */
-export function createStarterDocument(
-  treasury: TreasuryMetadata,
-  now?: Date,
-  documentId: string = STARTER_DOCUMENT_ID,
-): DocumentEnvelope {
-  const workbook = createBlankWorkbook("Untitled workbook");
-  return createDocumentEnvelope({
-    documentId,
-    title: "Untitled workbook",
-    workbook,
-    treasury,
-    now,
-  });
-}
-
 export type WorkspaceStatus = "loading" | "ready" | "error";
 
 export interface WorkspaceState {
   status: WorkspaceStatus;
   /** True only after successful startup from an empty repository. */
   isNewWorkspace: boolean;
-  /** The open document, or `null` while loading or after a fatal error. */
+  /** Last observed number of saved spreadsheets; null if storage is unavailable. */
+  documentCount: number | null;
+  /** The open spreadsheet, or null while loading or when none is selected. */
   document: DocumentEnvelope | null;
   saveStatus: SaveStatus;
   savedAt: string | null;
   saveError: string | null;
   /** Result of the last explicit action (import, export, new document). */
-  notice: { kind: "info" | "error"; message: string } | null;
+  notice: { kind: "info" | "error"; message: string; code?: 'document-not-found' } | null;
 }
 
 export interface DocumentWorkspaceOptions {
@@ -107,7 +91,7 @@ export type Unsubscribe = () => void;
 export interface DocumentWorkspace {
   getState(): WorkspaceState;
   subscribe(listener: () => void): Unsubscribe;
-  /** Loads the most recent document or creates the first one if empty. */
+  /** Initializes storage without selecting or creating a spreadsheet. */
   start(): Promise<void>;
   /**
    * Attaches a mounted editor. `documentId` is the document that editor was
@@ -123,10 +107,14 @@ export interface DocumentWorkspace {
   getSession(): WorkbookSession | null;
   /** Flushes unsaved edits before the editor is replaced or unloaded. */
   flush(): Promise<void>;
-  createNewDocument(): Promise<void>;
+  createNewDocument(): Promise<boolean>;
+  renameSavedDocument(documentId: string, title: string): Promise<boolean>;
+  duplicateDocument(documentId: string): Promise<boolean>;
+  deleteDocument(documentId: string): Promise<boolean>;
   createFromTemplate(id: TemplateId): Promise<boolean>;
   listDocuments(): ReturnType<DocumentRepository["list"]>;
-  openSavedDocument(documentId: string): Promise<void>;
+  openSavedDocument(documentId: string): Promise<boolean>;
+  closeDocument(): Promise<boolean>;
   rename(title: string): Promise<void>;
   /**
    * Records which treasury the open document belongs to.
@@ -160,6 +148,7 @@ export interface DocumentWorkspace {
 const initialState: WorkspaceState = {
   status: "loading",
   isNewWorkspace: false,
+  documentCount: null,
   document: null,
   saveStatus: "saved",
   savedAt: null,
@@ -187,19 +176,20 @@ export function createDocumentWorkspace(
     }
   };
 
-  const setDocument = (document: DocumentEnvelope) => {
+  const setDocument = (document: DocumentEnvelope, created = false) => {
     publish({
       status: "ready",
       document,
+      documentCount: created && state.documentCount !== null ? state.documentCount + 1 : state.documentCount,
       saveStatus: "saved",
       savedAt: document.updatedAt,
       saveError: null,
     });
   };
 
-  const noticeError = (message: string) => {
+  const noticeError = (message: string, code?: 'document-not-found') => {
     toast.error(message);
-    publish({ notice: { kind: "error", message } });
+    publish({ notice: { kind: "error", message, ...(code ? { code } : {}) } });
   };
 
   const OPEN_SETTLE_ERROR =
@@ -221,15 +211,29 @@ export function createDocumentWorkspace(
     return true;
   };
 
-  const openDocument = (document: DocumentEnvelope) => {
+  const openDocument = (document: DocumentEnvelope, created = false) => {
     detachSession();
-    setDocument(document);
+    setDocument(document, created);
   };
 
   const detachSession = () => {
     persistence?.dispose();
     persistence = null;
     session = null;
+  };
+
+  const saveNewDocument = async (document: DocumentEnvelope): Promise<DocumentEnvelope> => {
+    let candidate = document;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (repository.insert) {
+        if (await repository.insert(candidate)) return candidate;
+      } else if (!await repository.get(candidate.documentId)) {
+        await repository.save(candidate);
+        return candidate;
+      }
+      candidate = { ...candidate, documentId: createDocumentId() };
+    }
+    throw new Error('Could not create a unique spreadsheet link. Try again.');
   };
 
   /**
@@ -244,7 +248,7 @@ export function createDocumentWorkspace(
     if (!session) return base;
     try {
       const snapshot = session.saveSnapshot();
-      if (!snapshot) throw new Error("The current workbook cannot be captured.");
+      if (!snapshot) throw new Error("The current spreadsheet cannot be captured.");
       return withWorkbookSnapshot(base, snapshot, now());
     } catch (cause) {
       noticeError(cause instanceof Error ? cause.message : "Snapshot failed.");
@@ -254,38 +258,24 @@ export function createDocumentWorkspace(
 
   const start = async (): Promise<void> => {
     // Idempotent: React Strict Mode runs the mount effect twice, and starting
-    // twice must not create two starter documents.
+    // twice must not race document restoration.
     startPromise ??= (async () => {
       try {
-        const mostRecent = await repository.getMostRecent();
-        if (disposed) {
-          return;
-        }
-        if (mostRecent) {
-          setDocument(mostRecent);
-          return;
-        }
-        const starter = createStarterDocument(treasury, now());
-        await repository.save(starter);
-        if (disposed) {
-          return;
-        }
-        setDocument(starter);
-        publish({ isNewWorkspace: true });
+        const documents = await repository.list();
+        if (disposed) return;
+        publish({ status: 'ready', document: null, isNewWorkspace: documents.length === 0, documentCount: documents.length });
       } catch (cause) {
         if (disposed) {
           return;
         }
-        setDocument(createBlankDocument(createBlankWorkbook(),treasury,{now:now()}));
         publish({
+          status: 'ready', document: null,
           saveStatus: "error",
           saveError: cause instanceof Error ? cause.message : 'Storage unavailable.',
           notice: {
             kind: "error",
             message:
-              cause instanceof Error
-                ? `Storage unavailable: ${cause.message}. This workbook is in memory; export JSON to keep it.`
-                : "Storage unavailable. This workbook is in memory; export JSON to keep it.",
+              'Saved spreadsheets could not be loaded. Try again or import a backup.',
           },
         });
       }
@@ -331,20 +321,21 @@ export function createDocumentWorkspace(
     };
   };
 
-  const newDocument = async () => {
+  const newDocument = async (): Promise<boolean> => {
     const document = createBlankDocument(createBlankWorkbook(), treasury, { now: now() });
     try {
       // Persist pending edits to the old document before replacing it.
-      if (!(await settleBeforeSwitch())) {
-        return;
-      }
-      await repository.save(document);
-      openDocument(document);
+      if (!(await settleBeforeSwitch())) return false;
+      const saved = await saveNewDocument(document);
+      if (!(await settleBeforeSwitch())) return false;
+      openDocument(saved, true);
       toast.success('Created a new spreadsheet.');
+      return true;
     } catch (cause) {
       noticeError(
         cause instanceof Error ? cause.message : "The new spreadsheet could not be saved.",
       );
+      return false;
     }
   };
 
@@ -359,11 +350,11 @@ export function createDocumentWorkspace(
       const document = createDocumentEnvelope({
         title: template.name, workbook: template.createWorkbook(), treasury, now: now(),
       });
-      await repository.save(document);
+      const saved = await saveNewDocument(document);
       if (disposed) return false;
       // Capture edits made while the new document's persistence was in flight.
       if (!(await settleBeforeSwitch())) return false;
-      openDocument(document);
+      openDocument(saved, true);
       toast.success(`Created ${template.name}.`);
       return true;
     } catch (cause) {
@@ -407,6 +398,78 @@ export function createDocumentWorkspace(
     setDocument(next);
     if (activeSession) {
       attachSession(activeSession, next.documentId);
+    }
+  };
+
+  const renameSavedDocument = async (id: string, title: string): Promise<boolean> => {
+    try {
+      const base = id === state.document?.documentId
+        ? await settlePendingEdits() : await repository.get(id);
+      if (!base) throw new Error('This spreadsheet is no longer available.');
+      const next = renameDocument(base, title, now());
+      if (id === state.document?.documentId) await replaceDocument(next);
+      else await repository.save(next);
+      return true;
+    } catch (cause) {
+      noticeError(cause instanceof Error ? cause.message : 'Could not rename spreadsheet.');
+      return false;
+    }
+  };
+
+  const duplicateDocument = async (id: string): Promise<boolean> => {
+    try {
+      if (!(await settleBeforeSwitch())) return false;
+      const source = id === state.document?.documentId
+        ? await settlePendingEdits() : await repository.get(id);
+      if (!source) throw new Error('This spreadsheet is no longer available.');
+      // Preserve action identities and journals so a copy cannot silently retry
+      // a submitted payment. Reviewed plans belong to the old editor session.
+      const copy = asImportedCopy(structuredClone(source), { now: now() });
+      copy.title = source.title + ' (copy)';
+      const saved = await saveNewDocument(copy);
+      if (!(await settleBeforeSwitch())) return false;
+      openDocument(saved, true);
+      toast.success('Created a copy.');
+      return true;
+    } catch (cause) {
+      noticeError(cause instanceof Error ? cause.message : 'Could not duplicate spreadsheet.');
+      return false;
+    }
+  };
+
+  const deleteDocument = async (id: string): Promise<boolean> => {
+    try {
+      if (!(await settleBeforeSwitch())) return false;
+      const target = await repository.get(id);
+      if (!target) throw new Error('This spreadsheet is no longer available.');
+      if (Object.values(target.executions).some(record => record.state === 'awaiting-wallet' || record.state === 'indeterminate')) {
+        throw new Error('Resolve pending wallet results before deleting this spreadsheet.');
+      }
+      const active = state.document?.documentId === id;
+      // Resolve the replacement before deleting, so read failures retain the file.
+      const documents = await repository.list();
+      const nextId = active ? documents.find(doc => doc.documentId !== id)?.documentId : undefined;
+      const next = nextId ? await repository.get(nextId) : null;
+      const previousSession = session;
+      if (active) {
+        if (!(await settleBeforeSwitch())) return false;
+        detachSession();
+      }
+      try { await repository.remove(id); }
+      catch (cause) {
+        if (active && previousSession) attachSession(previousSession, id);
+        throw cause;
+      }
+      if (active) {
+        if (next) setDocument(next);
+        else publish({ status: 'ready', document: null, savedAt: null, saveStatus: 'saved', saveError: null });
+      }
+      publish({ documentCount: documents.length - 1 });
+      toast.success('Deleted spreadsheet from this browser.');
+      return true;
+    } catch (cause) {
+      noticeError(cause instanceof Error ? cause.message : 'Could not delete spreadsheet.');
+      return false;
     }
   };
 
@@ -473,8 +536,8 @@ export function createDocumentWorkspace(
       }
       // Validate and migrate fully before writing, so a rejected import cannot
       // overwrite a recoverable original.
-      await repository.save(imported);
-      openDocument(imported);
+      const saved = await saveNewDocument(imported);
+      openDocument(saved, true);
       toast.success(result.migratedFrom === null
         ? "Imported document."
         : `Imported document (migrated from version ${result.migratedFrom}).`);
@@ -507,8 +570,8 @@ export function createDocumentWorkspace(
       if (!(await settleBeforeSwitch())) {
         return;
       }
-      await repository.save(document);
-      openDocument(document);
+      const saved = await saveNewDocument(document);
+      openDocument(saved, true);
       toast.success("Imported CSV as a new document. Formulas and formatting are not part of CSV.");
     } catch (cause) {
       noticeError(
@@ -566,18 +629,35 @@ export function createDocumentWorkspace(
     createNewDocument: newDocument,
     createFromTemplate,
     listDocuments: () => repository.list(),
+    closeDocument: async () => {
+      if (!(await settleBeforeSwitch())) return false;
+      let documentCount = state.documentCount;
+      try { documentCount = (await repository.list()).length; } catch { documentCount = null; }
+      detachSession();
+      publish({ status: 'ready', document: null, documentCount, savedAt: null, saveStatus: 'saved', saveError: null, notice: null });
+      return true;
+    },
     openSavedDocument: async (id) => {
       try {
-        if (!(await settleBeforeSwitch())) return;
+        if (!(await settleBeforeSwitch())) return false;
+        if (state.document?.documentId === id) return true;
         const saved = await repository.get(id);
-        if (!saved) throw new Error("This document is no longer available.");
+        if (!saved) {
+          noticeError("This spreadsheet wasn't found in this browser.", 'document-not-found');
+          return false;
+        }
         openDocument(saved);
         publish({ notice: null });
+        return true;
       } catch (cause) {
-        noticeError(cause instanceof Error ? cause.message : "Could not open document.");
+        noticeError(cause instanceof Error ? cause.message : "Could not open spreadsheet.");
+        return false;
       }
     },
     rename,
+    renameSavedDocument,
+    duplicateDocument,
+    deleteDocument,
     setTreasury: setTreasuryMetadata,
     recordSubmission,
     recordExecution: async (record,documentId) => {
@@ -588,7 +668,7 @@ export function createDocumentWorkspace(
         return;
       }
       const base = await settlePendingEdits();
-      if (!base) throw new Error("The current workbook could not be captured.");
+      if (!base) throw new Error("The current spreadsheet could not be captured.");
       await replaceDocument({...base, executions:{...base.executions,[record.id]:record}});
     },
     importJson,

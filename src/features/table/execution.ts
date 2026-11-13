@@ -67,7 +67,7 @@ export async function executePlan(options: {
   const unchanged = () => {
     const state = wallet.getState();
     if (snapshotFingerprint(options.snapshot()) !== plan.snapshot || state.connection?.accountId !== plan.account || state.network !== plan.network)
-      throw staleData('Preview is stale. Review the changed workbook or account again.');
+      throw staleData('Preview is stale. Review the changed spreadsheet or account again.');
   };
   unchanged();
   for (const op of plan.operations) {

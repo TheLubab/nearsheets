@@ -348,19 +348,21 @@ describe('welcome eligibility and preference', () => {
     const first = createDocumentWorkspace({ repository, treasury });
     await Promise.all([first.start(), first.start()]);
     expect(first.getState().isNewWorkspace).toBe(true);
-    expect(await repository.list()).toHaveLength(1);
+    expect(await repository.list()).toHaveLength(0);
+    await first.createNewDocument();
     const returning = createDocumentWorkspace({ repository, treasury });
     await returning.start();
     expect(returning.getState().isNewWorkspace).toBe(false);
     first.dispose(); returning.dispose();
   });
-  it('keeps editing and export available without showing welcome on storage startup errors', async () => {
+  it('does not create a spreadsheet when storage initialization fails', async () => {
     const repository = new MemoryDocumentRepository();
-    vi.spyOn(repository, 'getMostRecent').mockRejectedValue(new Error('Unavailable'));
+    vi.spyOn(repository, 'list').mockRejectedValue(new Error('Unavailable'));
     const workspace = createDocumentWorkspace({ repository, treasury });
     await workspace.start();
     expect(workspace.getState()).toMatchObject({ status: 'ready', isNewWorkspace: false, saveStatus: 'error' });
-    expect(await workspace.exportJson()).toContain('nearsheets');
+    expect(workspace.getState().document).toBeNull();
+    expect(await workspace.exportJson()).toBeNull();
     workspace.dispose();
   });
   it('persists only a preference and retains dismissal in-session when storage fails', () => {

@@ -1,0 +1,87 @@
+diff --git a/lib/cjs/index.js b/lib/cjs/index.js
+index 709bf7ce62742fe611ffc30c01f329a15f7bc73c..11d2268798ac47a30705f7a7f04cf71534c20156 100644
+--- a/lib/cjs/index.js
++++ b/lib/cjs/index.js
+@@ -7643,13 +7643,16 @@ var SingleUnitUIController = class extends _univerjs_core.Disposable {
+ 		const initialSkeleton = (_this$_injector$get = this._injector.get(IWorkbenchService, _univerjs_core.Quantity.OPTIONAL)) === null || _this$_injector$get === void 0 ? void 0 : _this$_injector$get.acquireSkeleton();
+ 		if (initialSkeleton) this.disposeWithMe(initialSkeleton);
+ 		this.disposeWithMe(this.bootstrap(async (contentElement, containerElement) => {
++			if (this._disposed) return;
+ 			if (this._layoutService) {
+ 				this.disposeWithMe(this._layoutService.registerRootContainerElement(containerElement));
+ 				this.disposeWithMe(this._layoutService.registerContentElement(contentElement));
+ 			}
+ 			try {
+ 				await this._lifecycleService.onStage(_univerjs_core.LifecycleStages.Ready);
++				if (this._disposed) return;
+ 				this._renderTimeout = window.setTimeout(() => {
++					if (this._disposed) return;
+ 					const allRenders = this._renderManagerService.getRenderAll();
+ 					for (const [key] of allRenders) if (this._changeRenderUnit(key, contentElement)) break;
+ 					requestAnimationFrame(() => requestAnimationFrame(() => initialSkeleton === null || initialSkeleton === void 0 ? void 0 : initialSkeleton.dispose()));
+@@ -7665,6 +7668,7 @@ var SingleUnitUIController = class extends _univerjs_core.Disposable {
+ 					}));
+ 					this._lifecycleService.stage = _univerjs_core.LifecycleStages.Rendered;
+ 					this._steadyTimeout = window.setTimeout(() => {
++						if (this._disposed) return;
+ 						this._lifecycleService.stage = _univerjs_core.LifecycleStages.Steady;
+ 					}, STEADY_TIMEOUT);
+ 				}, 300);
+diff --git a/lib/es/index.js b/lib/es/index.js
+index ebc4587ffb5174f522ace4bd0d53a461abce73f3..e65656f8b585cd50e9d6c68b8e7512ea5d7dd879 100644
+--- a/lib/es/index.js
++++ b/lib/es/index.js
+@@ -7642,13 +7642,16 @@ var SingleUnitUIController = class extends Disposable {
+ 		const initialSkeleton = (_this$_injector$get = this._injector.get(IWorkbenchService, Quantity.OPTIONAL)) === null || _this$_injector$get === void 0 ? void 0 : _this$_injector$get.acquireSkeleton();
+ 		if (initialSkeleton) this.disposeWithMe(initialSkeleton);
+ 		this.disposeWithMe(this.bootstrap(async (contentElement, containerElement) => {
++			if (this._disposed) return;
+ 			if (this._layoutService) {
+ 				this.disposeWithMe(this._layoutService.registerRootContainerElement(containerElement));
+ 				this.disposeWithMe(this._layoutService.registerContentElement(contentElement));
+ 			}
+ 			try {
+ 				await this._lifecycleService.onStage(LifecycleStages.Ready);
++				if (this._disposed) return;
+ 				this._renderTimeout = window.setTimeout(() => {
++					if (this._disposed) return;
+ 					const allRenders = this._renderManagerService.getRenderAll();
+ 					for (const [key] of allRenders) if (this._changeRenderUnit(key, contentElement)) break;
+ 					requestAnimationFrame(() => requestAnimationFrame(() => initialSkeleton === null || initialSkeleton === void 0 ? void 0 : initialSkeleton.dispose()));
+@@ -7664,6 +7667,7 @@ var SingleUnitUIController = class extends Disposable {
+ 					}));
+ 					this._lifecycleService.stage = LifecycleStages.Rendered;
+ 					this._steadyTimeout = window.setTimeout(() => {
++						if (this._disposed) return;
+ 						this._lifecycleService.stage = LifecycleStages.Steady;
+ 					}, STEADY_TIMEOUT);
+ 				}, 300);
+diff --git a/lib/index.js b/lib/index.js
+index ebc4587ffb5174f522ace4bd0d53a461abce73f3..e65656f8b585cd50e9d6c68b8e7512ea5d7dd879 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -7642,13 +7642,16 @@ var SingleUnitUIController = class extends Disposable {
+ 		const initialSkeleton = (_this$_injector$get = this._injector.get(IWorkbenchService, Quantity.OPTIONAL)) === null || _this$_injector$get === void 0 ? void 0 : _this$_injector$get.acquireSkeleton();
+ 		if (initialSkeleton) this.disposeWithMe(initialSkeleton);
+ 		this.disposeWithMe(this.bootstrap(async (contentElement, containerElement) => {
++			if (this._disposed) return;
+ 			if (this._layoutService) {
+ 				this.disposeWithMe(this._layoutService.registerRootContainerElement(containerElement));
+ 				this.disposeWithMe(this._layoutService.registerContentElement(contentElement));
+ 			}
+ 			try {
+ 				await this._lifecycleService.onStage(LifecycleStages.Ready);
++				if (this._disposed) return;
+ 				this._renderTimeout = window.setTimeout(() => {
++					if (this._disposed) return;
+ 					const allRenders = this._renderManagerService.getRenderAll();
+ 					for (const [key] of allRenders) if (this._changeRenderUnit(key, contentElement)) break;
+ 					requestAnimationFrame(() => requestAnimationFrame(() => initialSkeleton === null || initialSkeleton === void 0 ? void 0 : initialSkeleton.dispose()));
+@@ -7664,6 +7667,7 @@ var SingleUnitUIController = class extends Disposable {
+ 					}));
+ 					this._lifecycleService.stage = LifecycleStages.Rendered;
+ 					this._steadyTimeout = window.setTimeout(() => {
++						if (this._disposed) return;
+ 						this._lifecycleService.stage = LifecycleStages.Steady;
+ 					}, STEADY_TIMEOUT);
+ 				}, 300);

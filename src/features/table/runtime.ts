@@ -119,7 +119,7 @@ export class TableRuntime {
     const version=this.epoch;
     const read=(network:NearNetwork,contract:string,method:string,args:Record<string,unknown>={})=>this.read(network,contract,method,args,context);
     const accept=()=>{this.accept(version);if(context&&!this.bindings.current(context))throw staleData('Cell calculation superseded.');};
-    if (this.disposed) throw new Error('Workbook closed.');
+    if (this.disposed) throw new Error('Spreadsheet closed.');
     args=args.map(value=>Array.isArray(value)&&value.length===1&&Array.isArray(value[0])&&value[0].length===1?value[0][0]:value);
     const signature=TABLE_FUNCTIONS.find(entry=>entry[0]===name);
     if(!signature || args.length!==signature[1].split(',').length)throw invalidInput('Wrong argument count.', 'Use the function argument hints to supply all required arguments.');

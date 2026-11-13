@@ -91,7 +91,7 @@ export function FunctionArguments({session,target,functionName,editing=false,pre
     </label>;
    })}
    <datalist id="verified-tokens"><option value="near">Native NEAR</option>{verifiedTokens.map(t=><option key={t.contract} value={t.contract}>{t.symbol} · RPC verified</option>)}{tokens.filter(t=>t.blockchain==='near'&&t.assetId.startsWith('nep141:')).map(t=><option key={t.assetId} value={t.assetId.slice(7)}>{t.symbol} · Provider catalog; RPC verification required</option>)}</datalist>
-   {needsMetadata&&<p role="status">{metadata?.key===metadataKey?`${metadata.symbol} · RPC-verified precision: ${metadata.decimals}`:metadataError||'Verifying token metadata…'} Suggestions include verified workbook tokens and provider assets; this is not a holdings index.</p>}
+   {needsMetadata&&<p role="status">{metadata?.key===metadataKey?`${metadata.symbol} · RPC-verified precision: ${metadata.decimals}`:metadataError||'Verifying token metadata…'} Suggestions include verified spreadsheet tokens and provider assets; this is not a holdings index.</p>}
    {catalogError&&<p role="alert">Asset catalog unavailable: {catalogError}</p>}
    {unavailable&&<p role="alert">{unavailable}</p>}
    <div className="formula-preview"><span>{editing?'Edit':'Insert'} · {target.label}</span><code>{formula||'Complete the arguments.'}</code><p>Output: {entry.output}. Tables spill into free cells; Univer reports collisions.</p></div>

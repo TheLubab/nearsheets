@@ -16,9 +16,9 @@
 
 NearSheets brings NEAR balances, shared treasury proposals and cross-chain transactions into cells. Use familiar formulas to plan a budget, prepare payments and review what you're about to sign. The results stay beside the work that produced them.
 
-**[Open nearsheets.xyz](https://nearsheets.xyz)** and choose **Show me how**. You'll get an editable workbook with live blockchain data and a short introduction. No account or wallet needed to explore. Already closed welcome? Use **Help → Getting started**.
+**[Open nearsheets.xyz](https://nearsheets.xyz)** and choose **Try the guided demo**. You'll get an editable spreadsheet with live blockchain data and a short introduction. No account or wallet needed to explore. From an open spreadsheet, use **Help → Guided demo** to start again.
 
-New visitors see welcome while the editor initializes behind it, without a preceding loading-message screen. Once welcome is dismissed, a locally bundled Unsplash photo and frosted loading panel appear below the header only if the editor and saving controls are still preparing. The panel offers reload and error details if opening fails. Later document switches use the same photo and glass loading panel; blockchain reads keep their own progress feedback.
+When no spreadsheets are saved, Welcome offers **Try the guided demo** or **Spreadsheets manager**. The manager lets you create, open, rename, duplicate, delete or import spreadsheets. **`/` always opens Welcome or Spreadsheets manager.** Opening a spreadsheet gives it a stable `/s/<id>` address you can bookmark or open in another tab. New files use compact 12-character IDs; existing links keep working. These links open files stored in this browser; they do not share data across devices. Startup creates no files. Use **File → Spreadsheets manager** to open the manager over your current file. Closing it preserves the file, editor session and URL.
 
 Try changing an account, adding a formula or opening a payroll template. The templates are starting points; you can build your own layout from a blank sheet. Your team's workflow doesn't have to fit somebody else's payment form.
 
@@ -35,7 +35,7 @@ This is programmable money through a familiar interface: formulas connect blockc
 
 The spreadsheet is the interface. Blockchain functions read data into cells and prepare actions from your inputs. Select action cells, review the exact details, then sign with your wallet. Recalculating a formula never moves money. Shared treasury payments use Sputnik DAO proposals and its approval rules; submitting a proposal isn't the same as completing a payment.
 
-Underneath are Univer for the spreadsheet, NEAR RPC for reads, NEAR Connect for signing and NEAR Intents for supported cross-chain routes. Workbooks save in your browser’s `near-sheets` database. Existing workbooks migrate automatically from the old store, which is kept as a recovery backup. Export JSON to back them up or move them to another machine.
+Underneath are Univer for the spreadsheet, NEAR RPC for reads, NEAR Connect for signing and NEAR Intents for supported cross-chain routes. Spreadsheets save in your browser’s `near-sheets` database. Existing spreadsheets migrate automatically from the old store, which is kept as a recovery backup. Use **File → Download backup (.json)** to back them up or move them to another machine.
 
 Blockchain reads run in the background, so fast cells can finish while slower cells load. Matching requests share a cache; token metadata and the Intents asset catalog are reused across cells. Pending values stay explicit, selected refresh leaves unrelated requests alone, and slow requests stop waiting after 15 seconds. Public RPC balance/contract reads are paced and automatically try a same-network FASTNEAR fallback if the default provider is rate limited or unreachable. Configured custom RPCs remain authoritative. Leave `VITE_NEAR_RPC_URL` unset to use automatic fallback. Stop cancels pending reads; refresh starts them again. The installed NEAR SDK may finish an already dispatched RPC request in the background, but cancelled results are ignored.
 

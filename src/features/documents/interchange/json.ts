@@ -1,3 +1,4 @@
+import { createDocumentId } from '../model/document-id';
 import type { WorkbookSnapshot } from "../../spreadsheet/model/workbook-snapshot";
 import { executionSchema } from '../../table/execution';
 import type { SubmissionRecord } from "../../treasury/model/proposal-submissions";
@@ -116,7 +117,7 @@ export function asImportedCopy(
   const timestamp = (options.now ?? new Date()).toISOString();
   return {
     ...document,
-    documentId: options.documentId ?? globalThis.crypto.randomUUID(),
+    documentId: options.documentId ?? createDocumentId(),
     createdAt: timestamp,
     updatedAt: timestamp,
   };

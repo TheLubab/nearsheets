@@ -71,7 +71,7 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
   const snapshot=snapshotFingerprint(session.saveSnapshot()),owner=workspace.getState().document?.documentId;if(!owner)return;
   const rows=await preflightRows(cells,runtime,wallet);
   if(currentSession.current!==session)return;
-  if(snapshotFingerprint(session.saveSnapshot())!==snapshot)throw new Error('Workbook changed during preflight. Open a new review.');
+  if(snapshotFingerprint(session.saveSnapshot())!==snapshot)throw new Error('Spreadsheet changed during preflight. Open a new review.');
   setReview({rows,snapshot,owner,plan:null,finished:false});
  });
  useEffect(()=>{
@@ -100,7 +100,7 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
    <button disabled={busy||!selection.readKeys.size} onClick={()=>refresh(true)}>Refresh selected reads</button>
    {selection.allCells.slice(page*30,(page+1)*30).map(cell=><section key={cell.address}><h3>{cell.address}</h3><code>{cell.formula}</code><p>Value: {String(cell.value??'')}</p>{cell.problems.map((problem,i)=><ProblemNotice key={i} problem={problem}/>)}{cell.args.length>0&&<details><summary>Resolved arguments</summary><pre>{JSON.stringify(cell.args,null,2)}</pre></details>}{cell.operation&&<p>{cell.operation.amount} {cell.operation.asset} · {cell.operation.baseUnits} base units</p>}{cell.readKeys.map(key=>{const read=activeSession?.tableRuntime?.evidence.get(key);return read?<ReadDetails key={key} readKey={key} read={read}/>:null;})}</section>)}
    {selection.cellCount>30&&<p><button disabled={page===0} onClick={()=>setPage(p=>p-1)}>Previous</button> Page {page+1} of {Math.ceil(selection.cellCount/30)} · {selection.cellCount} cells <button disabled={(page+1)*30>=selection.cellCount} onClick={()=>setPage(p=>p+1)}>Next</button></p>}
-   <label><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Workbook-wide history and reads</label>
+   <label><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Spreadsheet history and reads</label>
    {history&&[...(activeSession?.tableRuntime?.evidence??[])].map(([key,read])=><ReadDetails key={key} readKey={key} read={read}/>)}
    {records.map(record=><section key={record.id}><p>{record.id}: {record.state}</p><p>{record.transactionHash??'No hash returned. Check wallet transaction history before preparing a replacement.'}</p>{executionProblem(record)&&<ProblemNotice problem={executionProblem(record)!}/>}<button disabled={busy||!record.transactionHash} onClick={()=>void reconcile(record)}>Check transaction</button></section>)}
    {error&&<ProblemNotice problem={error}/>}

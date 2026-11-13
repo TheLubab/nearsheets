@@ -111,6 +111,17 @@ export class DexieDocumentRepository implements DocumentRepository {
     await this.database.documents.put(row);
   }
 
+  async insert(document: DocumentEnvelope): Promise<boolean> {
+    await this.ensureReady();
+    try {
+      await this.database.documents.add(structuredClone(document));
+      return true;
+    } catch (cause) {
+      if (cause instanceof Error && cause.name === 'ConstraintError') return false;
+      throw cause;
+    }
+  }
+
   async remove(documentId: string): Promise<void> {
     await this.ensureReady();
     await this.database.documents.delete(documentId);

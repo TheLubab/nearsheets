@@ -120,7 +120,7 @@ export function createDocumentPersistence(
         // would clone the whole workbook for nothing.
         const snapshot = session.saveSnapshot();
         if (!snapshot) {
-          throw new Error("The workbook is no longer available.");
+          throw new Error("The spreadsheet is no longer available.");
         }
         const serialized = JSON.stringify(snapshot);
         if (serialized === baselineSnapshot) {

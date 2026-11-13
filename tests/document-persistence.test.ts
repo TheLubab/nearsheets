@@ -217,7 +217,7 @@ describe("document workspace", () => {
       now: () => new Date("2026-11-11T10:00:00.000Z"),
     });
 
-  it("creates and persists the starter document on first run", async () => {
+  it("starts empty without creating a saved spreadsheet", async () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
 
@@ -225,11 +225,11 @@ describe("document workspace", () => {
 
     const document = workspace.getState().document;
     expect(workspace.getState().status).toBe("ready");
-    expect(document?.title).toBe("Untitled workbook");
-    expect(await repository.getMostRecent()).not.toBeNull();
+    expect(document).toBeNull();
+    expect(await repository.list()).toEqual([]);
   });
 
-  it("reopens the most recent document instead of the starter", async () => {
+  it("initializes without selecting an existing spreadsheet", async () => {
     const repository = new MemoryDocumentRepository();
     const existing = envelope("Saved draft");
     await repository.save(existing);
@@ -237,13 +237,15 @@ describe("document workspace", () => {
     const workspace = createWorkspace(repository);
     await workspace.start();
 
-    expect(workspace.getState().document?.documentId).toBe("doc-Saved draft");
+    expect(workspace.getState().document).toBeNull();
+    expect(await repository.list()).toHaveLength(1);
   });
 
   it("leaves the current document intact when a JSON import is invalid", async () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const before = workspace.getState().document;
     const beforeStored = await repository.getMostRecent();
 
@@ -259,6 +261,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const before = workspace.getState().document;
 
     const future = JSON.parse(serializeDocument(before!)) as Record<string, unknown>;
@@ -273,6 +276,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
 
     const importedSource = envelope("Imported source");
     await workspace.importJson(serializeDocument(importedSource));
@@ -290,6 +294,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
 
     await workspace.importCsv("Contributor,Amount\nSara,30\n", "Untitled workbook.csv");
 
@@ -304,6 +309,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
 
     const exported = await workspace.exportJson();
     expect(exported).not.toBeNull();
@@ -311,18 +317,19 @@ describe("document workspace", () => {
     const second = createWorkspace(new MemoryDocumentRepository());
     await second.start();
     await second.importJson(exported!);
-    expect(second.getState().document?.title).toBe("Untitled workbook");
+    expect(second.getState().document?.title).toBe("Untitled spreadsheet");
   });
 
   it("creates a new blank document", async () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
 
     await workspace.createNewDocument();
 
     const document = workspace.getState().document;
-    expect(document?.title).toBe("Untitled workbook");
+    expect(document?.title).toBe("Untitled spreadsheet");
     expect(document?.workbook.sheetOrder).toHaveLength(1);
   });
 
@@ -330,6 +337,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
 
     await workspace.rename("Renamed budget");
 
@@ -341,6 +349,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const fake = sessionWithWorkbook();
     workspace.attachSession(fake.session, workspace.getState().document!.documentId);
 
@@ -359,6 +368,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const fake = sessionWithWorkbook();
     workspace.attachSession(fake.session, workspace.getState().document!.documentId);
     fake.edit({ name: "Unsaved critical edit" });
@@ -375,6 +385,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const before = workspace.getState().document!.documentId;
 
     const fake = sessionWithWorkbook();
@@ -403,6 +414,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const fake = fakeSession();
 
     const detach = workspace.attachSession(fake.session, "some-other-document");
@@ -410,13 +422,14 @@ describe("document workspace", () => {
     await flushTimers();
     detach();
 
-    expect((await repository.getMostRecent())?.workbook.name).toBe("Untitled workbook");
+    expect((await repository.getMostRecent())?.workbook.name).toBe("Untitled spreadsheet");
   });
 
   it("does not let a stale attach detach the live editor", async () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const firstId = workspace.getState().document!.documentId;
     const first = sessionWithWorkbook();
     workspace.attachSession(first.session, firstId);
@@ -438,6 +451,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
 
     await workspace.setTreasury({ network: "mainnet", accountId: "my-dao.near" });
 
@@ -452,6 +466,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     await workspace.setTreasury({ network: "testnet", accountId: "dao.testnet" });
 
     // Autosave is re-bound to the updated envelope; an edit must not write the
@@ -471,6 +486,7 @@ describe("document workspace", () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createWorkspace(repository);
     await workspace.start();
+    await workspace.createNewDocument();
     const original = workspace.getState().document!;
 
     await workspace.setTreasury({ network: original.treasury.network, accountId: null });
@@ -483,6 +499,7 @@ describe('template creation preserves documents', () => {
     const repository = new MemoryDocumentRepository();
     const workspace = createDocumentWorkspace({ repository, treasury });
     await workspace.start();
+    await workspace.createNewDocument();
     const original = workspace.getState().document!;
     const editor = sessionWithWorkbook(original.workbook);
     workspace.attachSession(editor.session, original.documentId);
@@ -544,4 +561,151 @@ describe('template creation preserves documents', () => {
       expect(await f.repository.list()).toHaveLength(2);
     } finally { f.workspace.dispose(); }
   });
+});
+
+describe('spreadsheet management', () => {
+  const setup = async () => {
+    const repository = new MemoryDocumentRepository();
+    const workspace = createDocumentWorkspace({ repository, treasury });
+    await workspace.start();
+    await workspace.createNewDocument();
+    return { repository, workspace, original: workspace.getState().document! };
+  };
+
+  it('keeps repeated empty startup read-only, including concurrent calls', async () => {
+    const repository = new MemoryDocumentRepository();
+    const workspace = createDocumentWorkspace({ repository, treasury });
+    await Promise.all([workspace.start(), workspace.start()]);
+    expect(workspace.getState()).toMatchObject({ status: 'ready', document: null });
+    expect(await repository.list()).toHaveLength(0);
+    workspace.dispose();
+  });
+
+  it('renames another saved spreadsheet without replacing the active editor', async () => {
+    const f = await setup();
+    await f.workspace.createNewDocument();
+    const active = f.workspace.getState().document!;
+    expect(await f.workspace.renameSavedDocument(f.original.documentId, 'Payroll')).toBe(true);
+    expect((await f.repository.get(f.original.documentId))?.title).toBe('Payroll');
+    expect(f.workspace.getState().document?.documentId).toBe(active.documentId);
+    expect(await f.workspace.renameSavedDocument(active.documentId, '   ')).toBe(false);
+    expect(f.workspace.getState().document?.title).toBe(active.title);
+    f.workspace.dispose();
+  });
+
+  it('leaves saved spreadsheets accessible without reopening one at startup', async () => {
+    const f = await setup();
+    await f.workspace.createNewDocument();
+    const second = f.workspace.getState().document!;
+    await f.workspace.openSavedDocument(f.original.documentId);
+    await f.workspace.renameSavedDocument(second.documentId, 'Recently renamed');
+    const returning = createDocumentWorkspace({ repository: f.repository, treasury });
+    await returning.start();
+    expect(returning.getState().document).toBeNull();
+    expect(await returning.listDocuments()).toHaveLength(2);
+    f.workspace.dispose(); returning.dispose();
+  });
+
+  it('duplicates live edits and retains action identities and transaction history', async () => {
+    const f = await setup();
+    const record = { id: 'payment-reference', revision: 'reviewed', account: 'signer.testnet', at: new Date().toISOString(), state: 'confirmed' as const, transactionHash: 'tx', message: null };
+    await f.workspace.recordExecution(record);
+    const editor = sessionWithWorkbook(f.original.workbook);
+    f.workspace.attachSession(editor.session, f.original.documentId);
+    editor.edit({ name: 'Unsaved changes' });
+    expect(await f.workspace.duplicateDocument(f.original.documentId)).toBe(true);
+    const copy = f.workspace.getState().document!;
+    expect(copy.documentId).not.toBe(f.original.documentId);
+    expect(copy.title).toBe('Untitled spreadsheet (copy)');
+    expect(copy.workbook.name).toBe('Unsaved changes');
+    expect(copy.workbook.id).toBe(f.original.workbook.id);
+    expect(copy.executions[record.id]).toEqual(record);
+    expect((await f.repository.get(f.original.documentId))?.workbook.name).toBe('Unsaved changes');
+    expect(editor.listenerCount()).toBe(0);
+    f.workspace.dispose();
+  });
+
+  it('keeps the source open when duplicating fails', async () => {
+    const f = await setup();
+    vi.spyOn(f.repository, 'save').mockRejectedValue(new Error('Disk full'));
+    expect(await f.workspace.duplicateDocument(f.original.documentId)).toBe(false);
+    expect(f.workspace.getState().document?.documentId).toBe(f.original.documentId);
+    expect(await f.repository.list()).toHaveLength(1);
+    f.workspace.dispose();
+  });
+
+  it('opens another saved file when deleting the active file, then stays empty after the last deletion', async () => {
+    const f = await setup();
+    await f.workspace.createNewDocument();
+    const second = f.workspace.getState().document!;
+    const editor = sessionWithWorkbook(second.workbook);
+    f.workspace.attachSession(editor.session, second.documentId);
+    expect(await f.workspace.deleteDocument(second.documentId)).toBe(true);
+    expect(await f.repository.get(second.documentId)).toBeNull();
+    expect(editor.listenerCount()).toBe(0);
+    expect(f.workspace.getState().document?.documentId).toBe(f.original.documentId);
+    expect(await f.workspace.deleteDocument(f.original.documentId)).toBe(true);
+    expect(f.workspace.getState()).toMatchObject({ status: 'ready', document: null });
+    await f.workspace.flush();
+    const returning = createDocumentWorkspace({ repository: f.repository, treasury });
+    await returning.start();
+    expect(returning.getState().document).toBeNull();
+    expect(await f.repository.list()).toHaveLength(0);
+    f.workspace.dispose(); returning.dispose();
+  });
+
+  it('retains the active editor when deletion fails', async () => {
+    const f = await setup();
+    const editor = sessionWithWorkbook(f.original.workbook);
+    f.workspace.attachSession(editor.session, f.original.documentId);
+    vi.spyOn(f.repository, 'remove').mockRejectedValue(new Error('Storage unavailable'));
+    expect(await f.workspace.deleteDocument(f.original.documentId)).toBe(false);
+    expect(f.workspace.getSession()).toBe(editor.session);
+    expect(editor.listenerCount()).toBe(1);
+    expect(await f.repository.get(f.original.documentId)).not.toBeNull();
+    f.workspace.dispose();
+  });
+
+  it('refuses deletion and switching when current edits cannot be saved', async () => {
+    const f = await setup();
+    const editor = sessionWithWorkbook(f.original.workbook);
+    f.workspace.attachSession(editor.session, f.original.documentId);
+    editor.edit({ name: 'Critical edits' });
+    vi.spyOn(f.repository, 'save').mockRejectedValue(new Error('Storage unavailable'));
+    expect(await f.workspace.deleteDocument(f.original.documentId)).toBe(false);
+    expect(await f.workspace.openSavedDocument(f.original.documentId)).toBe(false);
+    expect(await f.workspace.exportJson()).toContain('Critical edits');
+    expect(await f.repository.get(f.original.documentId)).not.toBeNull();
+    f.workspace.dispose();
+  });
+
+  it.each(['awaiting-wallet', 'indeterminate'] as const)('keeps %s transaction evidence from being deleted', async state => {
+    const f = await setup();
+    await f.workspace.recordExecution({ id: 'payment', revision: 'r1', account: 'signer.testnet', at: new Date().toISOString(), state, transactionHash: null, message: null });
+    expect(await f.workspace.deleteDocument(f.original.documentId)).toBe(false);
+    expect(f.workspace.getState().notice?.message).toContain('pending wallet results');
+    expect(await f.repository.get(f.original.documentId)).not.toBeNull();
+    f.workspace.dispose();
+  });
+});
+
+it('tracks the saved-file count through creation, import and the last deletion', async () => {
+  const repository = new MemoryDocumentRepository();
+  const workspace = createDocumentWorkspace({ repository, treasury });
+  try {
+    await workspace.start();
+    expect(workspace.getState().documentCount).toBe(0);
+    await workspace.createNewDocument();
+    const first = workspace.getState().document!.documentId;
+    expect(workspace.getState().documentCount).toBe(1);
+    await workspace.importCsv('Name\nAlice', 'import.csv');
+    const second = workspace.getState().document!.documentId;
+    expect(workspace.getState().documentCount).toBe(2);
+    await workspace.closeDocument();
+    await workspace.deleteDocument(first);
+    expect(workspace.getState().documentCount).toBe(1);
+    await workspace.deleteDocument(second);
+    expect(workspace.getState().documentCount).toBe(0);
+    expect(workspace.getState().document).toBeNull();
+  } finally { workspace.dispose(); }
 });

@@ -78,7 +78,7 @@ function gettingStarted() {
   input(s, 32, 'quote-only recipient', '0x0000000000000000000000000000000000000001');
   line(s, 34, 'The recipient above is a placeholder for this estimate. Leave A36:C60 free for results.');
   cell(s, 36, 1, '=IF(OR(B28="",B29="",B30="",B31="",B32=""),"Enter quote inputs",INTENTS_QUOTE(B29,B30,B28,B31,B32,"near",100))');
-  line(s, 62, 'For a fresh estimate, select the quote and choose Blockchain → Refresh → Refresh selected reads. Use Refresh all workbook data to update everything.');
+  line(s, 62, 'For a fresh estimate, select the quote and choose Blockchain → Refresh → Refresh selected reads. Use Refresh all spreadsheet data to update everything.');
   const book = workbook('Getting started with NearSheets', s);
   const transaction = gettingStartedTransaction();
   book.sheetOrder.push(transaction.id!);
@@ -227,6 +227,6 @@ export const WORKBOOK_TEMPLATES:readonly WorkbookTemplate[]=galleryOrder.map(id=
 });
 export function getWorkbookTemplate(id: TemplateId): WorkbookTemplate {
   const template = WORKBOOK_TEMPLATES.find(t => t.id === id);
-  if (!template) throw new Error('Unknown workbook template.');
+  if (!template) throw new Error('Unknown spreadsheet template.');
   return template;
 }

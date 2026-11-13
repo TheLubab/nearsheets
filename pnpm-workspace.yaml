@@ -4,3 +4,5 @@
 # than silently ignored.
 allowBuilds:
   protobufjs: false
+patchedDependencies:
+  '@univerjs/ui@1.4.0': patches/@univerjs__ui@1.4.0.patch

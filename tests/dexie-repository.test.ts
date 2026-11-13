@@ -71,6 +71,18 @@ describe("Dexie document repository", () => {
     expect((await repository.getMostRecent())?.title).toBe("Newer");
   });
 
+  it('atomically inserts a new identity without replacing a concurrent or existing file', async () => {
+    const repository = createRepository();
+    const first = document('Collision', '2026-11-11T09:00:00.000Z', 1);
+    const other = { ...first, title: 'Other', workbook: snapshot('Other', 2) };
+    const results = await Promise.all([repository.insert(first), repository.insert(other)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const winner = results[0] ? first : other;
+    expect(await repository.get(first.documentId)).toEqual(winner);
+    expect(await repository.insert({ ...first, title: 'Overwrite attempt' })).toBe(false);
+    expect(await repository.get(first.documentId)).toEqual(winner);
+  });
+
   it("replaces a document with the same id instead of duplicating it", async () => {
     const repository = createRepository();
     const original = document("Budget", "2026-11-10T09:00:00.000Z", 1);
