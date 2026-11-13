@@ -1,9 +1,9 @@
 <p align="center">
   <sub>
-    <a href="https://nearsheets.xyz"><strong>nearsheets.xyz</strong></a> ·
+    <a href="https://nearsheets.xyz"><strong>Open app</strong></a> ·
     <a href="https://nearsheets.userjot.com/">Feedback</a> ·
     <a href="https://nearsheets.userjot.com/roadmap">Roadmap</a> ·
-    <a href="https://nearsheets.userjot.com/updates">Changelog</a>
+    <a href="https://nearsheets.userjot.com/updates">Updates</a>
   </sub>
 </p>
 
