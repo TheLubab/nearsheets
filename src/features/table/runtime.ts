@@ -1,3 +1,5 @@
+import { nearReadClient } from '../../integrations/near/read-client';
+import { boundedRead } from '../../integrations/http/request';
 import { ReadBindings } from './read-bindings';
 import type { CalculationContext } from './read-bindings';
 import { env } from '../../config/env';
@@ -34,14 +36,14 @@ export interface Operation {
 }
 export interface ReadEvidence { network: NearNetwork; fetchedAt: string; value: unknown; stale?:boolean }
 export interface TablePorts {
-  view(network: NearNetwork, contract: string, method: string, args: Record<string, unknown>): Promise<unknown>;
+  view(network: NearNetwork, contract: string, method: string, args: Record<string, unknown>, signal?:AbortSignal): Promise<unknown>;
   transaction?(network: NearNetwork, hash: string, signer: string): Promise<unknown>;
-  balance(network: NearNetwork, account: string): Promise<string>;
+  balance(network: NearNetwork, account: string, signal?:AbortSignal): Promise<string>;
 }
 export const rpcPorts: TablePorts = {
   transaction: (network,txHash,accountId) => createNearProvider(undefined,network).viewTransactionStatus({txHash,accountId,waitUntil:'FINAL'}),
-  view: (network, contractId, method, args) => createNearProvider(undefined, network).callFunction({contractId, method, args}),
-  balance: async (network, accountId) => (await createNearProvider(undefined, network).viewAccount({accountId})).amount.toString(),
+  view: (network, contractId, method, args, signal) => nearReadClient.read(network,provider=>provider.callFunction({contractId, method, args}),signal),
+  balance: async (network, accountId, signal) => (await nearReadClient.read(network,provider=>provider.viewAccount({accountId}),signal)).amount.toString(),
 };
 const networkSchema = z.enum(['mainnet', 'testnet']);
 const metadataSchema = z.object({spec: z.literal('ft-1.0.0'), name: z.string(), symbol: z.string().min(1), decimals: z.number().int().min(0).max(24)});
@@ -81,6 +83,9 @@ export class TableRuntime {
   readonly evidence = new Map<string, ReadEvidence>();
   private epoch = 0;
   private disposed = false;
+  private keyVersions = new Map<string,number>();
+  private refreshListeners = new Set<(keys?:ReadonlySet<string>,stopped?:boolean)=>void>();
+  onRefresh(listener:(keys?:ReadonlySet<string>,stopped?:boolean)=>void) { this.refreshListeners.add(listener);return {dispose:()=>{this.refreshListeners.delete(listener);}}; }
   requestVersion() { return this.epoch; }
   accept(version:number) { if(this.disposed || this.epoch!==version)throw staleData('Read superseded. Refresh the cell.'); }
   constructor(readonly ports: TablePorts = rpcPorts, readonly query = new QueryClient(), readonly intents:OneClick|null = env.VITE_INTENTS_API_URL ? new OneClick(env.VITE_INTENTS_API_URL) : null) {}
@@ -88,18 +93,20 @@ export class TableRuntime {
     const key = [network, contract, method, args];
     context?.keys.add(JSON.stringify(key));
     const epoch = this.epoch;
-    const value = await this.query.fetchQuery({queryKey: key, staleTime: 30_000,
-      queryFn: async () => {
-        try { return await this.ports.view(network, contract, method, args); }
+    const keyVersion=this.keyVersions.get(JSON.stringify(key));
+    const value = await this.query.fetchQuery({queryKey: key, staleTime: method==='ft_metadata' ? 300_000 : 30_000, retry:false,
+      queryFn: async ({signal}) => {
+        try { return await boundedRead(abort=>this.ports.view(network, contract, method, args,abort),signal); }
         catch(cause) { throw readProblem(cause,network,contract,method); }
       }});
-    if (this.disposed || epoch !== this.epoch) throw staleData('Read superseded. Recalculate.');
+    if (this.disposed || epoch !== this.epoch || keyVersion!==this.keyVersions.get(JSON.stringify(key))) throw staleData('Read superseded. Recalculate.');
     this.evidence.set(JSON.stringify(key), {network, value, fetchedAt: new Date(this.query.getQueryState(key)?.dataUpdatedAt ?? Date.now()).toISOString()});
     return value;
   }
-  async cached<T>(key:readonly unknown[],queryFn:()=>Promise<T>,staleTime:number,context?:CalculationContext):Promise<T> {
-    context?.keys.add(JSON.stringify(key));const version=this.epoch;
-    const value=await this.query.fetchQuery({queryKey:key,queryFn,staleTime});this.accept(version);
+  async cached<T>(key:readonly unknown[],queryFn:(signal:AbortSignal)=>Promise<T>,staleTime:number,context?:CalculationContext):Promise<T> {
+    context?.keys.add(JSON.stringify(key));const version=this.epoch;const keyVersion=this.keyVersions.get(JSON.stringify(key));
+    const value=await this.query.fetchQuery({queryKey:key,queryFn:({signal})=>boundedRead(queryFn,signal),staleTime,retry:false});this.accept(version);
+    if(keyVersion!==this.keyVersions.get(JSON.stringify(key)))throw staleData('Read superseded. Refresh the cell.');
     this.evidence.set(JSON.stringify(key),{network:key[0]==='testnet'?'testnet':'mainnet',value,fetchedAt:new Date(this.query.getQueryState(key)?.dataUpdatedAt??Date.now()).toISOString()});return value;
   }
   async calculate(name:string,args:unknown[],context?:CalculationContext):Promise<TableResult> {
@@ -125,7 +132,7 @@ export class TableRuntime {
       const prior = JSON.parse(record.revision) as Operation;
       if (!prior.intents?.depositAddress) throw new Error('No prepared Intents deposit is recorded.');
       if (!this.intents) throw unavailable('Intents is not configured.');
-      const result = await this.cached(['intents-status',prior.intents.depositAddress],()=>this.intents!.status(prior.intents!.depositAddress!),5000,context);
+      const result = await this.cached(['intents-status',prior.intents.depositAddress],signal=>this.intents!.status(prior.intents!.depositAddress!,undefined,signal),5000,context);
       return [['Provider stage','Updated at','Details'],[result.status,result.updatedAt,JSON.stringify(result.swapDetails ?? {})]];
     }
     if (name === 'NS_STATUS') {
@@ -145,7 +152,7 @@ export class TableRuntime {
     if (name === 'INTENTS_QUOTE') {
       if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input = {originAsset:text(args[0]),destinationAsset:text(args[1]),amount:text(args[2]),destinationChain:text(args[3]),recipient:text(args[4]),refundTo:text(args[5]),slippageTolerance:Number(args[6])};
-      const quote = await this.cached(['intents-estimate',input],()=>this.intents!.estimate(input),5000,context);
+      const quote = await this.cached(['intents-estimate',input],signal=>this.intents!.estimate(input,signal),5000,context);
       if (Date.parse(quote.expiresAt) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
       const amounts = quote.response.quote;
       return [['Estimate · no funding instructions','Value','Token / unit'],
@@ -165,8 +172,8 @@ export class TableRuntime {
     const network = checkedNetwork.data;
     if (name === 'NEAR_BALANCE' || name === 'NEAR_BALANCE_EXACT') {
       const id = account(args[0]);
-      const units = await this.cached([network,id,'balance'], async () => {
-        try { return await this.ports.balance(network,id); }
+      const units = await this.cached([network,id,'balance'], async signal => {
+        try { return await this.ports.balance(network,id,signal); }
         catch(cause) { throw readProblem(cause,network,id); }
       },30_000,context);
       const amount = amountFromBaseUnits(units,24);
@@ -176,8 +183,9 @@ export class TableRuntime {
     }
     if (name === 'FT_BALANCE' || name === 'FT_BALANCE_EXACT') {
       const token = account(args[0]), owner = account(args[1]);
-      const metadata = metadataSchema.parse(await read(network,token,'ft_metadata'));
-      const units = z.string().regex(/^\d+$/).parse(await read(network,token,'ft_balance_of',{account_id:owner}));
+      const [rawMetadata,rawUnits] = await Promise.all([read(network,token,'ft_metadata'),read(network,token,'ft_balance_of',{account_id:owner})]);
+      const metadata = metadataSchema.parse(rawMetadata);
+      const units = z.string().regex(/^\d+$/).parse(rawUnits);
       const amount = amountFromBaseUnits(units,metadata.decimals)!;
       const balanceKey = [network,token,'ft_balance_of',{account_id:owner}];
       accept();this.evidence.set(JSON.stringify(balanceKey), {
@@ -240,7 +248,7 @@ export class TableRuntime {
       if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input:QuoteInput = {originAsset:text(args[2]),destinationAsset:text(args[3]),amount:text(args[4]),destinationChain:text(args[5]),recipient:text(args[6]),refundTo:account(args[7]),slippageTolerance:Number(args[8])};
       if (input.refundTo !== source) throw invalidInput('DAO-funded swaps must refund to the source DAO.');
-      const estimate = await this.cached(['intents-estimate',input],()=>this.intents!.estimate(input),5000,context);
+      const estimate = await this.cached(['intents-estimate',input],signal=>this.intents!.estimate(input,signal),5000,context);
       if (estimate.origin.blockchain !== 'near' || !input.originAsset.startsWith('nep141:')) throw unavailable('DAO funding currently supports NEAR fungible tokens only.');
       asset = account(input.originAsset.slice(7));
       const meta = metadataSchema.parse(await read(network,asset,'ft_metadata'));
@@ -294,12 +302,19 @@ export class TableRuntime {
     for (const [label,value] of this.operations) if(value.id===op.id && value.revision===op.revision)this.operations.set(label,prepared);
     return prepared;
   }
+  stopReads() {
+    this.epoch++;
+    void this.query.cancelQueries();
+    this.intents?.clearCache();
+    this.refreshListeners.forEach(listener=>listener(undefined,true));
+  }
   refresh(keys?:ReadonlySet<string>) {
-    this.epoch++;this.diagnostics.clear();
-    if(keys) {for(const key of keys){this.query.removeQueries({queryKey:JSON.parse(key) as unknown[],exact:true});const read=this.evidence.get(key);if(read)read.stale=true;}}
+    if(!keys) {this.epoch++;this.diagnostics.clear();this.intents?.clearCache();}
+    this.refreshListeners.forEach(listener=>listener(keys));
+    if(keys) {for(const key of keys){this.keyVersions.set(key,(this.keyVersions.get(key)??0)+1);this.query.removeQueries({queryKey:JSON.parse(key) as unknown[],exact:true});const read=this.evidence.get(key);if(read)read.stale=true;}}
     else {this.query.clear();for(const read of this.evidence.values())read.stale=true;}
   }
-  dispose() { this.disposed = true; this.refresh();this.bindings.clear();this.operations.clear(); }
+  dispose() { this.disposed = true; this.refresh();this.bindings.clear();this.operations.clear();this.refreshListeners.clear(); }
 }
 
 export function checkRouteExpiry(proposal:unknown,action:string) {

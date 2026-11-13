@@ -7,7 +7,7 @@ import '@univerjs/sheets/facade';
 import {getPatternPreview} from '@univerjs/sheets-numfmt';
 import {balanceNumberFormat, registerBalanceFormatting} from '../src/features/spreadsheet/univer/balance-format';
 import {TableRuntime} from '../src/features/table/runtime';
-import {StringValueObject, AsyncObject} from '@univerjs/engine-formula';
+import {StringValueObject} from '@univerjs/engine-formula';
 import {createTableFunctionCatalog} from '../src/features/spreadsheet/univer/table-functions';
 
 describe('balance presentation', () => {
@@ -167,8 +167,12 @@ describe('balance presentation', () => {
       return units;
     }},undefined,null);
     const args = name==='NEAR_BALANCE_EXACT' ? ['alice.testnet','testnet'] : ['token.testnet','alice.testnet','testnet'];
-    const Constructor=createTableFunctionCatalog(runtime,()=>name).find(([,registered])=>registered===name)![0];
-    const cell=await (new Constructor(name).calculate(...args.map(value=>StringValueObject.create(value))) as AsyncObject).getValue();
+    let done!:()=>void;const ready=new Promise<void>(resolve=>{done=resolve;});
+    const Constructor=createTableFunctionCatalog(runtime,()=>name,()=>done()).find(([,registered])=>registered===name)![0];
+    const fn=new Constructor(name);
+    fn.calculate(...args.map(value=>StringValueObject.create(value)));
+    await ready;
+    const cell=fn.calculate(...args.map(value=>StringValueObject.create(value))) as import('@univerjs/engine-formula').BaseValueObject;
     expect(cell.isString()).toBe(true);
     expect(cell.getValue()).toBe('1.000000000000000000000001');
     const label = await runtime.calculate('SPUTNIK_TRANSFER',['exact','dao.testnet','bob.testnet',cell.getValue(),name==='NEAR_BALANCE_EXACT'?'near':'token.testnet','testnet']);

@@ -1,10 +1,11 @@
+import {recalculateTableCells} from '../src/features/spreadsheet/univer/table-recalculation';
 import { referencedProblems } from '../src/features/table/referenced-problems';
 import {describe,it,expect,vi} from 'vitest';
 import {Univer,LocaleType} from '@univerjs/core';
 import {FUniver} from '@univerjs/core/facade';
 import {UniverSheetsPlugin} from '@univerjs/sheets';
 import {UniverSheetsFormulaPlugin} from '@univerjs/sheets-formula';
-import {UniverFormulaEnginePlugin, ErrorType, ErrorValueObject, StringValueObject, AsyncObject} from '@univerjs/engine-formula';
+import {UniverFormulaEnginePlugin, ErrorType, ErrorValueObject, StringValueObject} from '@univerjs/engine-formula';
 import {AccountDoesNotExistError} from 'near-api-js/rpc-errors';
 import '@univerjs/sheets/facade';
 import '@univerjs/sheets-formula/facade';
@@ -27,18 +28,70 @@ function fixture() {
   const univer=new Univer({locale:LocaleType.EN_US,locales:{[LocaleType.EN_US]:{}}});
   const api=FUniver.newAPI(univer);
   const readFormula=(cell:import('../src/features/table/cell-diagnostics').CellLocation)=>api.getWorkbook(cell.unitId)?.getSheetBySheetId(cell.sheetId)?.getRange(cell.row,cell.column).getFormula() ?? '';
-  const functions=[...createTableFunctionCatalog(runtime,readFormula),...withHelperDiagnostics(createCustomFunctionCatalog().functions,runtime,readFormula)];
+  const tableFunctions=createTableFunctionCatalog(runtime,readFormula,cells=>recalculateTableCells(api,cells));
+  const functions=[...tableFunctions,...withHelperDiagnostics(createCustomFunctionCatalog().functions,runtime,readFormula)];
   univer.registerPlugin(UniverSheetsPlugin);
   univer.registerPlugin(UniverFormulaEnginePlugin,{function:functions});
   univer.registerPlugin(UniverSheetsFormulaPlugin);
   const book=api.createWorkbook({id:'errors'}),sheet=book.getActiveSheet();
-  const start=api.getFormula().calculationStart(()=>runtime.diagnostics.nextCalculation());
+  const start=api.getFormula().calculationStart(()=>{runtime.diagnostics.nextCalculation();runtime.bindings.nextCalculation();tableFunctions.beginCalculation();});
+  const end=api.getFormula().calculationEnd(state=>{if(state===3)tableFunctions.endCalculation();});
   const location=(row:number,column=0)=>({unitId:book.getId(),sheetId:sheet.getSheetId(),row,column});
   const diagnostics=(address:string)=>{const cell=sheet.getRange(address);return runtime.diagnostics.get(location(cell.getRow(),cell.getColumn()),cell.getFormula(),cell.getRawValue());};
-  return {univer,api,book,sheet,runtime,balance,functions,location,diagnostics,dispose(){start.dispose();runtime.dispose();univer.dispose();}};
+  return {univer,api,book,sheet,runtime,balance,functions,tableFunctions,location,diagnostics,dispose(){start.dispose();end.dispose();runtime.dispose();univer.dispose();}};
 }
 
 describe('cell-specific blockchain errors through the real formula engine',()=>{
+  it('stops pending cells without leaving a loading state or automatically restarting reads',async()=>{
+    const f=fixture();let signal!:AbortSignal;
+    f.runtime.ports.balance=vi.fn(async(_n,_a,abort)=>{signal=abort!;return new Promise<string>(()=>{});});
+    try {
+      f.sheet.getRange('A1').setValue({f:'=NEAR_BALANCE("slow.near","mainnet")'});
+      await vi.waitFor(()=>expect(signal).toBeDefined());
+      f.runtime.stopReads();
+      await vi.waitFor(()=>expect(f.sheet.getRange('A1').getRawValue()).toBe('#N/A'));
+      expect(signal.aborted).toBe(true);
+      expect(f.diagnostics('A1')[0]?.code).toBe('read-stopped');
+      expect(f.runtime.ports.balance).toHaveBeenCalledTimes(1);
+    }finally{f.dispose();}
+  });
+
+  it('cancels an unused request after a referenced input changes and ignores its late result',async()=>{
+    const f=fixture();let release!:(value:string)=>void;let oldSignal!:AbortSignal;
+    f.runtime.ports.balance=vi.fn(async(_network,account,signal)=>{
+      if(account==='slow.near'){oldSignal=signal!;return new Promise<string>(resolve=>{release=resolve;});}
+      return '2000000000000000000000000';
+    });
+    try {
+      f.sheet.getRange('A1').setValue('slow.near');
+      f.sheet.getRange('B1').setValue({f:'=NEAR_BALANCE(A1,"mainnet")'});
+      await vi.waitFor(()=>expect(oldSignal).toBeDefined());
+      f.sheet.getRange('A1').setValue('fast.near');
+      await vi.waitFor(()=>expect(f.sheet.getRange('B1').getRawValue()).toBe(2));
+      expect(oldSignal.aborted).toBe(true);
+      release('9000000000000000000000000');
+      await new Promise(resolve=>setTimeout(resolve,40));
+      expect(f.sheet.getRange('B1').getRawValue()).toBe(2);
+    }finally{f.dispose();}
+  });
+
+  it('renders fast reads and dependent arithmetic while a different cell is still loading',async()=>{
+    const f=fixture();let release!:(value:string)=>void;
+    f.balance.mockImplementation(async(_network,account)=>account==='slow.near'?new Promise<string>(resolve=>{release=resolve;}):'2000000000000000000000000');
+    try {
+      f.sheet.getRange('A1:B1').setValues([[{f:'=NEAR_BALANCE("slow.near","mainnet")'},{f:'=NEAR_BALANCE("fast.near","mainnet")'}]]);
+      f.sheet.getRange('C1').setValue({f:'=B1+1'});
+      f.sheet.getRange('D1').setValue({f:'=SUM(A1:B1)'});
+      await vi.waitFor(()=>expect(f.sheet.getRange('C1').getRawValue()).toBe(3));
+      expect(f.sheet.getRange('A1').getRawValue()).toBe(ErrorType.CONNECT);
+      expect(f.sheet.getRange('D1').getRawValue()).toBe(ErrorType.CONNECT);
+      expect(f.balance).toHaveBeenCalledTimes(2);
+      release('1000000000000000000000000');
+      await vi.waitFor(()=>expect(f.sheet.getRange('D1').getRawValue()).toBe(3));
+      expect(f.balance).toHaveBeenCalledTimes(2);
+    }finally{f.dispose();}
+  });
+
   it('explains a missing account, propagates an error, supports IFERROR, and clears after correction',async()=>{
     const f=fixture();
     try {
@@ -154,7 +207,8 @@ describe('cell-specific blockchain errors through the real formula engine',()=>{
       const result=fn.calculate(StringValueObject.create('old.near'),StringValueObject.create('mainnet'));
       f.sheet.getRange('A1').setValue(7);
       f.runtime.refresh();reject(new AccountDoesNotExistError('old.near','block',1));
-      await (result as AsyncObject).getValue();
+      expect(result.isError()).toBe(true);
+      await Promise.resolve();
       expect(f.runtime.diagnostics.get(f.location(0),formula,'#N/A')).toEqual([]);
     } finally {f.dispose();}
   });

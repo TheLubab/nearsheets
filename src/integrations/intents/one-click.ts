@@ -1,3 +1,5 @@
+import { QueryClient } from '@tanstack/react-query';
+import { boundedRead } from '../http/request';
 import { z } from 'zod';
 import { checkNearAccountId } from '../../features/treasury/model/near-account';
 import { parseExactAmount } from '../../features/treasury/model/exact-amount';
@@ -27,11 +29,14 @@ export function validateAddress(chain:string,address:string): string {
 }
 /** Public API only. Secret partner credentials require the unresolved server boundary. */
 export class OneClick {
+  private catalog=new QueryClient();
+  clearCache(){this.catalog.clear();}
   constructor(readonly baseUrl:string,readonly request:typeof fetch=(input,init)=>globalThis.fetch(input,init)) {}
-  private async json(path:string,init?:RequestInit) {
+  private async json(path:string,init?:RequestInit,signal?:AbortSignal) {
+    return boundedRead(async abort=>{
     let response:Response;
     const url=`${this.baseUrl.replace(/\/$/,'')}/v0/${path}`;
-    try { response=await this.request(url,init); }
+    try { response=await this.request(url,{...init,signal:abort}); }
     catch(cause) {
       const error=serviceProblem(cause,'Intents');
       error.problem.details=`${init?.method??'GET'} ${url}\n${cause instanceof Error?cause.name+': '+cause.message:String(cause)}`;
@@ -40,11 +45,12 @@ export class OneClick {
     if(!response.ok)throw serviceProblem(await response.text(),'Intents',response.status);
     try { return await response.json() as unknown; }
     catch(cause) { throw serviceProblem(cause,'Intents',response.status); }
+    },signal);
   }
-  async tokens(){return z.array(tokenSchema).parse(await this.json('tokens'));}
-  async estimate(input:QuoteInput) { return this.quote(input,true); }
+  async tokens(){return this.catalog.fetchQuery({queryKey:['intents-tokens'],staleTime:300_000,retry:false,queryFn:async({signal})=>z.array(tokenSchema).parse(await this.json('tokens',undefined,signal))});}
+  async estimate(input:QuoteInput,signal?:AbortSignal) { return this.quote(input,true,signal); }
   async prepare(input:QuoteInput) { return this.quote(input,false); }
-  private async quote(input:QuoteInput,dry:boolean) {
+  private async quote(input:QuoteInput,dry:boolean,signal?:AbortSignal) {
     const tokens=await this.tokens();
     const origin=tokens.find(t=>t.assetId===input.originAsset),destination=tokens.find(t=>t.assetId===input.destinationAsset && t.blockchain===input.destinationChain);
     if(!origin||!destination)throw unavailable('Asset/chain is not supported by the current provider catalog.');
@@ -55,7 +61,7 @@ export class OneClick {
     const slippageTolerance=z.number().int().min(0).max(5000).parse(input.slippageTolerance);
     const deadline=new Date(Date.now()+QUOTE_WINDOW_MS).toISOString();
     const body={dry,swapType:'EXACT_INPUT',originAsset:origin.assetId,destinationAsset:destination.assetId,amount:amount.amount.baseUnits,recipient,refundTo,slippageTolerance,depositType:'ORIGIN_CHAIN',recipientType:'DESTINATION_CHAIN',refundType:'ORIGIN_CHAIN',deadline};
-    const response=quoteSchema.parse(await this.json('quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));
+    const response=quoteSchema.parse(await this.json('quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},signal));
     if(dry && response.quote.depositAddress)throw new Error('Estimation unexpectedly returned funding instructions.');
     if(!dry && !response.quote.depositAddress)throw new Error('No deposit address was allocated.');
     if(response.quote.amountIn !== amount.amount.baseUnits)throw new Error('Provider changed the input amount.');
@@ -64,8 +70,8 @@ export class OneClick {
     if(Date.parse(expiresAt)<=Date.now())throw staleData('The quote has expired. Request another estimate.');
     return {input:body,origin,destination,response,expiresAt,expirySource:response.quote.deadline?'provider' as const:'request' as const};
   }
-  async status(depositAddress:string,depositMemo?:string){
+  async status(depositAddress:string,depositMemo?:string,signal?:AbortSignal){
     const query=new URLSearchParams({depositAddress,...(depositMemo?{depositMemo}:{})});
-    return z.object({correlationId:z.string(),status:z.enum(['PENDING_DEPOSIT','KNOWN_DEPOSIT_TX','PROCESSING','SUCCESS','INCOMPLETE_DEPOSIT','REFUNDED','FAILED']),updatedAt:z.string(),swapDetails:z.unknown().optional()}).parse(await this.json(`status?${query}`));
+    return z.object({correlationId:z.string(),status:z.enum(['PENDING_DEPOSIT','KNOWN_DEPOSIT_TX','PROCESSING','SUCCESS','INCOMPLETE_DEPOSIT','REFUNDED','FAILED']),updatedAt:z.string(),swapDetails:z.unknown().optional()}).parse(await this.json(`status?${query}`,undefined,signal));
   }
 }

@@ -6,6 +6,7 @@ import { registerCalculationFeedback } from './calculation-feedback';
 import { registerBalanceFormatting } from './balance-format';
 import { moveViewControlsToFooter } from './footer-view-controls';
 import { TableRuntime } from '../../table/runtime';
+import { recalculateTableCells } from './table-recalculation';
 import { createTableFunctionCatalog } from './table-functions';
 import { registerCellErrorAlerts } from './cell-error-alerts';
 import { withHelperDiagnostics } from './helper-diagnostics';
@@ -69,6 +70,7 @@ export function createUniverEngine(
   mountElement.style.height = "100%";
   options.container.append(mountElement);
 
+  let disposed = false;
   // Custom functions are registered through the preset so the formula engine
   // knows them before the first calculation. Registration must not run any
   // lookup: these are pure calculations.
@@ -76,7 +78,7 @@ export function createUniverEngine(
 
   const runtime = options.tableRuntime ?? new TableRuntime();
   const readFormula=(cell:CellLocation):string=>univerAPI.getWorkbook(cell.unitId)?.getSheetBySheetId(cell.sheetId)?.getRange(cell.row,cell.column).getFormula() ?? '';
-  const tableFunctions=createTableFunctionCatalog(runtime,readFormula);
+  const tableFunctions=createTableFunctionCatalog(runtime,readFormula,cells=>{if(!disposed)recalculateTableCells(univerAPI,cells);});
   const helperFunctions=withHelperDiagnostics(customFunctions.functions,runtime,readFormula);
   const tableDescriptions=FUNCTION_REGISTRY.map(f=>({functionName:f.name,functionType:FunctionType.User,description:f.description,abstract:f.title+' · '+f.output,functionParameter:f.arguments.map(parameter=>({name:parameter.name,detail:parameter.label,example:'',require:BooleanNumber.TRUE,repeat:BooleanNumber.FALSE}))}));
   // Univer paints selection borders on canvas, so resolve the CSS color at startup.
@@ -126,14 +128,15 @@ export function createUniverEngine(
   // The preset registers them before workbook creation, including on reopen.
   univerAPI.createWorkbook(options.initialWorkbook ?? {});
   registrations.push(registerCellErrorAlerts(univerAPI,univer.__getInjector().get(CellAlertManagerService),runtime,univer.__getInjector().get(IEditorBridgeService)));
-  registrations.push(univerAPI.getFormula().calculationStart(() => { runtime.calculating = true; runtime.diagnostics.nextCalculation(); runtime.bindings.nextCalculation(); }));
-  registrations.push(univerAPI.getFormula().calculationEnd(state => { runtime.calculating = state !== 3; }));
+  registrations.push(univerAPI.getFormula().calculationStart(() => { tableFunctions.beginCalculation(); runtime.calculating = true; runtime.diagnostics.nextCalculation(); runtime.bindings.nextCalculation(); }));
+  registrations.push(univerAPI.getFormula().calculationEnd(state => { runtime.calculating = state !== 3;if(state===3)tableFunctions.endCalculation(); }));
   for(const [command,title] of [['function:NEAR_BALANCE','Insert NEAR balance…'],['edit','Edit arguments…'],['inspect','Inspect blockchain cells / receipts'],['review','Review selected actions']]) {
     univerAPI.createMenu({id:'nearsheets.'+command,title:title!,action:()=>window.dispatchEvent(new CustomEvent('nearsheets:command',{detail:command}))}).appendTo(['contextMenu.mainArea','contextMenu.others']);
   }
 
   registrations.push(univerAPI.getActiveWorkbook()!.onCommandExecuted(command=>{
-    if(/(insert|remove|move).*(row|col|sheet)|(row|col|sheet).*(insert|remove|move)/i.test(command.id)) {runtime.bindings.clear();queueMicrotask(()=>{if(!disposed)univerAPI.getFormula().executeCalculation();});}
+    tableFunctions.prune();
+    if(/(insert|remove|move).*(row|col|sheet)|(row|col|sheet).*(insert|remove|move)/i.test(command.id)) {tableFunctions.reset();runtime.bindings.clear();queueMicrotask(()=>{if(!disposed)univerAPI.getFormula().executeCalculation();});}
     else runtime.bindings.prune(readFormula);
   }));
   registrations.push(registerBalanceFormatting(univerAPI, univer.__getInjector().get(IResourceManagerService), options.initialWorkbook));
@@ -141,8 +144,6 @@ export function createUniverEngine(
   registrations.push(registerBlockchainRibbon(univer,univerAPI));
   registrations.push(registerBlockchainTour({ root: mountElement, ribbon: univer.__getInjector().get(IRibbonService), onError: message => toast.error(message) }));
   moveViewControlsToFooter(univer);
-
-  let disposed = false;
 
   return {
     univer,

@@ -1,3 +1,4 @@
+import {recalculateTableCells} from '../src/features/spreadsheet/univer/table-recalculation';
 import { describe, expect, it, vi } from 'vitest';
 import { Univer, LocaleType } from '@univerjs/core';
 import { FUniver } from '@univerjs/core/facade';
@@ -40,7 +41,7 @@ function engine(id: TemplateId, snapshot?: WorkbookSnapshot, publicDefaults=fals
   const api = FUniver.newAPI(univer);
   univer.registerPlugin(UniverSheetsPlugin);
   univer.registerPlugin(UniverFormulaEnginePlugin, { function: createTableFunctionCatalog(runtime,
-    cell => api.getWorkbook(cell.unitId)?.getSheetBySheetId(cell.sheetId)?.getRange(cell.row, cell.column).getFormula() ?? '') });
+    cell => api.getWorkbook(cell.unitId)?.getSheetBySheetId(cell.sheetId)?.getRange(cell.row, cell.column).getFormula() ?? '',cells=>recalculateTableCells(api,cells)) });
   univer.registerPlugin(UniverSheetsFormulaPlugin);
   const initial=snapshot??getWorkbookTemplate(id).createWorkbook();
   if(!snapshot&&!publicDefaults)for(const data of Object.values(initial.sheets)){
@@ -98,11 +99,11 @@ describe('template workbooks', () => {
       await vi.waitFor(() => expect(f.sheet.getRange('B11').getValue()).toBe(6.25));
       await vi.waitFor(() => expect(f.sheet.getRange('C6').getValue()).toBe(2));
       await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe(10));
-      expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_metadata', {});
-      expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_balance_of', { account_id: 'root.near' });
-      expect(f.balance).toHaveBeenCalledWith('mainnet', 'root.near');
-      expect(f.balance).toHaveBeenCalledWith('mainnet', 'social.near');
-      expect(f.balance).toHaveBeenCalledWith('mainnet', 'ref-finance.sputnik-dao.near');
+      expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_metadata', {},expect.any(AbortSignal));
+      expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_balance_of', { account_id: 'root.near' },expect.any(AbortSignal));
+      expect(f.balance).toHaveBeenCalledWith('mainnet', 'root.near',expect.any(AbortSignal));
+      expect(f.balance).toHaveBeenCalledWith('mainnet', 'social.near',expect.any(AbortSignal));
+      expect(f.balance).toHaveBeenCalledWith('mainnet', 'ref-finance.sputnik-dao.near',expect.any(AbortSignal));
       f.sheet.getRange('A7').setValue('');
       await vi.waitFor(() => expect(f.sheet.getRange('B11').getValue()).toBe('Enter accounts and network'));
       await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe('Enter accounts, network and token'));
@@ -118,7 +119,7 @@ describe('template workbooks', () => {
       f.sheet.getRange('B4').setValue('token.testnet');
       await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe(10));
       expect(f.sheet.getRange('C5').getValue()).toBe('Token balance');
-      expect(f.view).toHaveBeenCalledWith('testnet', 'token.testnet', 'ft_metadata', {});
+      expect(f.view).toHaveBeenCalledWith('testnet', 'token.testnet', 'ft_metadata', {},expect.any(AbortSignal));
       f.sheet.getRange('B4').setValue('');
       await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe('Enter accounts, network and token'));
       expect(f.runtime.operations.size).toBe(0);
@@ -176,8 +177,8 @@ describe('template workbooks', () => {
       await vi.waitFor(()=>expect(f.sheet.getRange('D13').getValue()).toBe(7.5));
       expect(f.sheet.getRange('C7').getValue()).toBe('USDT balance');
       expect(f.sheet.getRange('D7').getValue()).toBe('USDC balance');
-      expect(f.view).toHaveBeenCalledWith('mainnet',usdt,'ft_metadata',{});
-      expect(f.view).toHaveBeenCalledWith('mainnet',usdc,'ft_metadata',{});
+      expect(f.view).toHaveBeenCalledWith('mainnet',usdt,'ft_metadata',{},expect.any(AbortSignal));
+      expect(f.view).toHaveBeenCalledWith('mainnet',usdc,'ft_metadata',{},expect.any(AbortSignal));
       f.sheet.getRange('B6').setValue('another.near');
       await vi.waitFor(()=>expect(f.sheet.getRange('D7').getValue()).toBe('Token 2 balance'));
     }finally{f.dispose();}
@@ -190,7 +191,7 @@ describe('template workbooks', () => {
       await vi.waitFor(() => expect(f.sheet.getRange('D10').getValue()).toBe('author.testnet'));
       expect(f.sheet.getRange('A9').getValue()).toBe('ID');
       expect(f.sheet.getRange('A10').getValue()).toBe(4);
-      expect(f.view).toHaveBeenCalledWith('testnet', 'dao.testnet', 'get_proposals', { from_index: 0, limit: 100 });
+      expect(f.view).toHaveBeenCalledWith('testnet', 'dao.testnet', 'get_proposals', { from_index: 0, limit: 100 },expect.any(AbortSignal));
     } finally { f.dispose(); }
   });
 

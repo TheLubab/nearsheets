@@ -34,6 +34,6 @@ export function getTableSelection(session:WorkbookSession|null) {
   }
  }
  const actionCells=allCells.filter(c=>c.action);
- const attention=allCells.filter(c=>c.problems.length||c.action&&!c.operation||c.submitted||typeof c.value==='string'&&/^#(VALUE!|N\/A|CONNECT!|ERROR!|REF!|SPILL!)/.test(c.value)).length;
+ const attention=allCells.filter(c=>c.problems.length||c.action&&!c.operation||c.submitted||typeof c.value==='string'&&/^#(VALUE!|N\/A|CONNECT!|GETTING_DATA|ERROR!|REF!|SPILL!)/.test(c.value)).length;
  return {label:ranges.map(r=>r.getA1Notation()).join(', ')||'Select a cell',single:bounds.length===1&&bounds[0]!.startRow===bounds[0]!.endRow&&bounds[0]!.startColumn===bounds[0]!.endColumn,operations,actionCells,allCells,cells:allCells.slice(0,30),cellCount:allCells.length,readKeys,attention,readCount:allCells.filter(c=>c.readKeys.length).length,calculating:session?.tableRuntime?.calculating??false,ready:Boolean(session)};
 }

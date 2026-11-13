@@ -1,3 +1,4 @@
+import {recalculateTableCells} from '../spreadsheet/univer/table-recalculation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { ReactNode } from 'react';
@@ -57,7 +58,13 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
   setEditor({name:parsed?.name??name,target:captureTarget(cell),editing});setInspect(false);
  };
  const [tracking,setTracking]=useState<{name:string;prefill:string}|null>(null);
- const refresh=(selected:boolean)=>{if(!activeSession?.tableRuntime)return;activeSession.tableRuntime.refresh(selected?selection.readKeys:undefined);activeSession.univerAPI.getFormula().executeCalculation();};
+ const refresh=(selected:boolean)=>{
+  if(!activeSession?.tableRuntime)return;
+  const runtime=activeSession.tableRuntime;
+  const cells=runtime.bindings.all().filter(binding=>[...binding.keys].some(key=>selection.readKeys.has(key))).map(binding=>binding.cell);
+  runtime.refresh(selected?selection.readKeys:undefined);
+  if(selected)recalculateTableCells(activeSession.univerAPI,cells);else activeSession.univerAPI.getFormula().executeCalculation();
+ };
  const openReview=()=>run('Checking selected actions…',async session=>{
   const runtime=session.tableRuntime!;if(runtime.calculating)throw new Error('Wait for calculation to finish.');
   const cells=getTableSelection(session).actionCells;if(!cells.length)throw new Error('Select action cells to review.');

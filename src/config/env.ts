@@ -26,13 +26,17 @@ export function readEnv(runtimeEnv: Record<string, string | number | boolean | u
   return createEnv({
     clientPrefix: "VITE_",
     client: {
+      // Network and optional authoritative RPC override.
       VITE_NEAR_NETWORK: z.enum(["mainnet", "testnet"]).default("testnet"),
       VITE_NEAR_RPC_URL: httpUrl.optional(),
-      VITE_WALLET_MANIFEST_URL: httpUrl.optional(),
-      VITE_AUTH_API_URL: httpUrl.optional(),
-      VITE_TREZU_API_URL: httpUrl.optional(),
+
+      // Public services have built-in defaults and an explicit "none" opt-out.
       VITE_INTENTS_API_URL: intentsApiUrl,
       VITE_VERCEL_ANALYTICS_MODE: analyticsMode,
+
+      // Optional integrations; no separate service is required for normal use.
+      VITE_WALLET_MANIFEST_URL: httpUrl.optional(),
+      VITE_AUTH_API_URL: httpUrl.optional(),
     },
     runtimeEnv,
     emptyStringAsUndefined: true,

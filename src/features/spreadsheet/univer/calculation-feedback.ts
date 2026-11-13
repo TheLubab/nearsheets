@@ -24,7 +24,7 @@ export function observeCalculationFeedback(
   reads:Observable<ReadActivity>=of(null),
 ) {
   let timer:ReturnType<typeof setTimeout>|undefined,active=false,visible=false,lastLabel='';
-  let activity:ReadActivity=null;
+  let activity:ReadActivity=null,engineActive=false;
   const label=()=>activity==='blockchain'?'Querying blockchain…':activity==='intents'?'Fetching swap quotes…':'Calculating…';
   const show=()=>{
     const message=label();if(visible&&message===lastLabel)return;
@@ -32,11 +32,14 @@ export function observeCalculationFeedback(
     toast.loading(message,{id:TOAST_IDS.calculation,action:{label:'Stop',onClick:stop}});
   };
   const clear=()=>{if(timer!==undefined)clearTimeout(timer);timer=undefined;active=false;if(visible)toast.dismiss(TOAST_IDS.calculation);visible=false;lastLabel='';};
-  const readSubscription=reads.subscribe(next=>{activity=next;if(active&&visible)show();});
+  const update=()=>{
+    if(engineActive || activity!==null){if(!active){active=true;timer=setTimeout(()=>{timer=undefined;show();},350);}else if(visible)show();}
+    else clear();
+  };
+  const readSubscription=reads.subscribe(next=>{activity=next;update();});
   const subscription=progress.subscribe({
     next:({count,done})=>{
-      if(count>0&&done<count){if(!active){active=true;timer=setTimeout(()=>{timer=undefined;show();},350);}}
-      else clear();
+      engineActive=count>0&&done<count;update();
     },complete:clear,error:clear,
   });
   return {dispose:()=>{subscription.unsubscribe();readSubscription.unsubscribe();clear();}};
@@ -51,6 +54,7 @@ export function registerCalculationFeedback(univer: Univer,runtime:TableRuntime)
   // Disable that presentation through the UI API; keep calculation untouched.
   const hidden = parts.registerDisabledUIParts([SheetsUIPart.FORMULA_AUX], of(true));
   const feedback = observeCalculationFeedback(calculation.progress$, () => {
+    runtime.stopReads();
     commands.executeCommand(SetFormulaCalculationStopMutation.id);
   },observeReadActivity(runtime));
   return { dispose: () => { feedback.dispose(); hidden.dispose(); } };

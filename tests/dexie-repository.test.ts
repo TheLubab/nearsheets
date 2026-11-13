@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, it } from "vitest";
+import Dexie from 'dexie';
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDocumentDatabase } from "../src/features/documents/repository/dexie-document-repository";
 import { DexieDocumentRepository } from "../src/features/documents/repository/dexie-document-repository";
 import { createDocumentEnvelope } from "../src/features/documents/model/document-envelope";
@@ -11,7 +12,7 @@ const openRepositories: DexieDocumentRepository[] = [];
 function createRepository(): DexieDocumentRepository {
   databaseCounter += 1;
   const repository = new DexieDocumentRepository(
-    createDocumentDatabase(`trezu-sheets-test-${databaseCounter}`),
+    createDocumentDatabase(`near-sheets-test-${databaseCounter}`),
   );
   openRepositories.push(repository);
   return repository;
@@ -97,7 +98,7 @@ describe("Dexie document repository", () => {
   });
 
   it("survives reopening the database", async () => {
-    const name = "trezu-sheets-reopen-test";
+    const name = "near-sheets-reopen-test";
     const first = new DexieDocumentRepository(createDocumentDatabase(name));
     await first.save(document("Persistent", "2026-11-11T09:00:00.000Z"));
     first.close();
@@ -105,5 +106,70 @@ describe("Dexie document repository", () => {
     const second = new DexieDocumentRepository(createDocumentDatabase(name));
     openRepositories.push(second);
     expect((await second.getMostRecent())?.title).toBe("Persistent");
+  });
+});
+describe('legacy database name migration',()=>{
+  afterEach(async()=>{
+    for(const repository of openRepositories.splice(0))repository.close();
+    await Dexie.delete('near-sheets');
+    await Dexie.delete('trezu-sheets');
+  });
+  async function legacyStore(rows:unknown[]) {
+    const legacy=new Dexie('trezu-sheets');
+    legacy.version(1).stores({documents:'documentId, updatedAt'});
+    try {await legacy.table('documents').bulkPut(rows);}finally{legacy.close();}
+  }
+  function currentRepository(database=createDocumentDatabase()) {
+    const repository=new DexieDocumentRepository(database);openRepositories.push(repository);return repository;
+  }
+  it('copies legacy documents and resources without rewriting user text or the legacy backup',async()=>{
+    const original=document('Trezu Sheets is my label','2026-11-11T09:00:00.000Z');
+    original.workbook.sheets.s1!.cellData![0]![0]={f:'=TREZU_ACCOUNT("alice.testnet")'};
+    original.workbook.resources=[{name:'custom',data:'preserved'}];
+    const legacy={...original,format:'trezu-sheets',schemaVersion:2};
+    await legacyStore([legacy]);
+    const repository=currentRepository();
+    const restored=await repository.get(original.documentId);
+    expect(restored?.format).toBe('nearsheets');
+    expect(restored?.title).toBe(original.title);
+    expect(restored?.workbook.resources).toEqual(original.workbook.resources);
+    expect(restored?.workbook.sheets.s1?.cellData?.[0]?.[0]?.f).toBe('=NEAR_ACCOUNT("alice.testnet")');
+    const backup=new Dexie('trezu-sheets');
+    try {
+      await backup.open();
+      expect(await backup.table('documents').get(original.documentId)).toEqual(legacy);
+      expect(backup.verno).toBe(1);
+    }finally{backup.close();}
+  });
+  it('preserves existing target documents and never resurrects a migrated document after deletion',async()=>{
+    const old=document('Budget','2026-11-10T09:00:00.000Z',1),newer=document('Budget','2026-11-11T09:00:00.000Z',2);
+    const other=document('Other','2026-11-11T10:00:00.000Z');
+    await legacyStore([old,other]);
+    const target=createDocumentDatabase();await target.documents.put(newer);
+    const repository=currentRepository(target);
+    expect(await repository.get(newer.documentId)).toEqual(newer);
+    expect(await repository.list()).toHaveLength(2);
+    await repository.remove(other.documentId);repository.close();
+    const reopened=currentRepository();
+    expect(await reopened.list()).toHaveLength(1);
+    expect(await reopened.get(other.documentId)).toBeNull();
+  });
+  it('rolls back a failed copy and retries without losing the old database',async()=>{
+    const original=document('Budget','2026-11-10T09:00:00.000Z');
+    await legacyStore([original]);
+    const target=createDocumentDatabase();
+    vi.spyOn(target.metadata,'put').mockRejectedValueOnce(new Error('Storage full'));
+    const repository=currentRepository(target);
+    await expect(repository.list()).rejects.toThrow('Storage full');
+    expect(await target.documents.count()).toBe(0);
+    expect(await target.metadata.count()).toBe(0);
+    expect(await Dexie.exists('trezu-sheets')).toBe(true);
+    expect(await repository.get(original.documentId)).toEqual(original);
+  });
+  it('creates the renamed store without creating an empty legacy database',async()=>{
+    const repository=currentRepository();
+    expect(await repository.list()).toEqual([]);
+    expect(await Dexie.exists('near-sheets')).toBe(true);
+    expect(await Dexie.exists('trezu-sheets')).toBe(false);
   });
 });

@@ -117,9 +117,8 @@ describe("routing between demo and real reads", () => {
 });
 
 describe("integration readiness reporting", () => {
-  it("reports configuration without claiming an adapter exists", () => {
+  it("reports the configured integrations", () => {
     const configured = readEnv({
-      VITE_TREZU_API_URL: "https://trezu.example.test",
       VITE_INTENTS_API_URL: "https://intents.example.test",
     });
     const byKey = Object.fromEntries(
@@ -127,7 +126,6 @@ describe("integration readiness reporting", () => {
     );
 
     expect(byKey["near-rpc"]?.state).toBe("available");
-    expect(byKey["trezu-api"]?.state).toBe("configured-no-adapter");
     expect(byKey["intents-api"]?.state).toBe("available");
   });
 
@@ -144,7 +142,6 @@ describe("integration readiness reporting", () => {
       describeIntegrations(readEnv({ VITE_INTENTS_API_URL: "none" })).map((status) => [status.key, status]),
     );
 
-    expect(byKey["trezu-api"]?.state).toBe("not-configured");
     expect(byKey["intents-api"]?.state).toBe("not-configured");
     expect(byKey["wallet-manifest"]?.state).toBe("not-configured");
     // RPC reads work without optional services.
@@ -166,7 +163,7 @@ describe("integration readiness reporting", () => {
   it("performs no network read while describing integrations", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const reader = createTreasuryReaderForNetwork({ network: "testnet", allowDemo: true });
-    describeIntegrations(readEnv({ VITE_TREZU_API_URL: "https://trezu.example.test" }), {
+    describeIntegrations(readEnv({}), {
       demoData: true,
     });
     expect(fetchSpy).not.toHaveBeenCalled();

@@ -1,5 +1,5 @@
 {
-  description = "Development environment for Trezu Sheets";
+  description = "Development environment for NearSheets";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

@@ -35,7 +35,9 @@ This is programmable money through a familiar interface: formulas connect blockc
 
 The spreadsheet is the interface. Blockchain functions read data into cells and prepare actions from your inputs. Select action cells, review the exact details, then sign with your wallet. Recalculating a formula never moves money. Shared treasury payments use Sputnik DAO proposals and its approval rules; submitting a proposal isn't the same as completing a payment.
 
-Underneath are Univer for the spreadsheet, NEAR RPC for reads, NEAR Connect for signing and NEAR Intents for supported cross-chain routes. Workbooks save in your browser. Export JSON to back them up or move them to another machine.
+Underneath are Univer for the spreadsheet, NEAR RPC for reads, NEAR Connect for signing and NEAR Intents for supported cross-chain routes. Workbooks save in your browser’s `near-sheets` database. Existing workbooks migrate automatically from the old store, which is kept as a recovery backup. Export JSON to back them up or move them to another machine.
+
+Blockchain reads run in the background, so fast cells can finish while slower cells load. Matching requests share a cache; token metadata and the Intents asset catalog are reused across cells. Pending values stay explicit, selected refresh leaves unrelated requests alone, and slow requests stop waiting after 15 seconds. Public RPC balance/contract reads are paced and automatically try a same-network FASTNEAR fallback if the default provider is rate limited or unreachable. Configured custom RPCs remain authoritative. Leave `VITE_NEAR_RPC_URL` unset to use automatic fallback. Stop cancels pending reads; refresh starts them again. The installed NEAR SDK may finish an already dispatched RPC request in the background, but cancelled results are ignored.
 
 NearSheets is a working application, deployed and available to use today, with automated tests covering its core behavior. You can also run it yourself with Node 24 and pnpm:
 

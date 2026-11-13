@@ -82,6 +82,20 @@ describe('calculation feedback', () => {
     feedback.dispose();
   });
 
+  it('keeps read feedback visible after the synchronous formula pass finishes',()=>{
+    const loading=vi.spyOn(toast,'loading').mockReturnValue('test');
+    const dismiss=vi.spyOn(toast,'dismiss').mockReturnValue('test');
+    const progress=new Subject<{count:number;done:number}>(),reads=new Subject<ReadActivity>();
+    const feedback=observeCalculationFeedback(progress,vi.fn(),reads);
+    try {
+      reads.next('blockchain');progress.next({count:2,done:2});
+      vi.advanceTimersByTime(400);
+      expect(loading).toHaveBeenCalledWith('Querying blockchain…',expect.any(Object));
+      expect(dismiss).not.toHaveBeenCalled();reads.next(null);
+      expect(dismiss).toHaveBeenCalledWith(TOAST_IDS.calculation);
+    }finally{feedback.dispose();}
+  });
+
   it('tracks actual pending queries and leaves cached reads quiet',async()=>{
     let resolve!:(value:string)=>void;
     const runtime=new TableRuntime({view:async()=>null,balance:()=>new Promise(done=>{resolve=done;})},undefined,null);

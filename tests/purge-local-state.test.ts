@@ -22,7 +22,7 @@ function browserState() {
 
 it('removes saved databases and browser preferences, caches, workers and cookies', async () => {
   const browser = browserState();
-  for (const name of ['trezu-sheets', 'wallet-state']) {
+  for (const name of ['near-sheets', 'trezu-sheets', 'wallet-state']) {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open(name);
       request.onsuccess = () => { request.result.close(); resolve(); };

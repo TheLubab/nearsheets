@@ -12,6 +12,11 @@ export class ReadBindings {
   const context={cell,formula,args,keys:new Set<string>(),rows:1,columns:1,token:Symbol()};
   entry.calls.set(name+' '+JSON.stringify(args),context);return context;
  }
+ retain(context:CalculationContext,name:string) {
+  const key=cellKey(context.cell);let entry=this.entries.get(key);
+  if(!entry||entry.cycle!==this.cycle||entry.formula!==context.formula){entry={cycle:this.cycle,formula:context.formula,calls:new Map()};this.entries.set(key,entry);}
+  entry.calls.set(name+' '+JSON.stringify(context.args),context);
+ }
  current(context:CalculationContext){return [...(this.entries.get(cellKey(context.cell))?.calls.values()??[])].includes(context);}
  all(){return [...this.entries.values()].flatMap(e=>[...e.calls.values()]);}
  forCell(cell:CellLocation) {return [...this.entries.values()].flatMap(e=>[...e.calls.values()]).filter(b=>b.cell.unitId===cell.unitId&&b.cell.sheetId===cell.sheetId&&cell.row>=b.cell.row&&cell.row<b.cell.row+b.rows&&cell.column>=b.cell.column&&cell.column<b.cell.column+b.columns);}

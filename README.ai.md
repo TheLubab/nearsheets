@@ -34,7 +34,7 @@ Open the URL Vite prints, normally `http://localhost:5173`. No application serve
 
 No `.env` file is required. The unconfigured wallet network defaults to testnet; guide/template reads explicitly select mainnet. For a mainnet wallet default, set `VITE_NEAR_NETWORK=mainnet` in `.env.local` and restart Vite. [.env.example](.env.example) lists optional public configuration. `src/config/env.ts` validates it with T3 Env and Zod. All `VITE_` values are public; never put secrets there.
 
-RPC defaults to the selected network's public endpoint. Intents defaults to `https://1click.chaindefuser.com`; `VITE_INTENTS_API_URL=none` disables it. A custom RPC override applies only to the configured network. Missing optional auth or Trezu endpoints doesn't block normal use.
+For the standard mainnet deployment, `VITE_NEAR_NETWORK=mainnet` is the only env value needed. Leave `VITE_NEAR_RPC_URL` unset to use paced public reads with same-network FASTNEAR fallback. Remove any old explicit RPC override to restore that behavior; custom RPCs remain authoritative for the configured network. Intents uses its public default and analytics uses auto without env entries; set the respective variable to `none` to disable it. Wallet-manifest and auth URLs are advanced opt-ins for actual integrations. Changes to these public build-time values require restarting Vite or rebuilding/redeploying the site.
 
 For self-hosting, run `pnpm build` and serve `dist/` on a static host. Documents belong to a browser profile and origin: localhost and nearsheets.xyz have separate storage. Transfer workbooks with JSON export/import.
 

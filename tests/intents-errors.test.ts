@@ -11,7 +11,7 @@ describe('provider error explanations',()=>{
     });
     vi.stubGlobal('fetch',browserFetch);
     await expect(new OneClick('https://example.invalid').tokens()).resolves.toEqual([]);
-    expect(browserFetch).toHaveBeenCalledWith('https://example.invalid/v0/tokens',undefined);
+    expect(browserFetch).toHaveBeenCalledWith('https://example.invalid/v0/tokens',expect.objectContaining({signal:expect.any(AbortSignal)}));
   });
   it('preserves the endpoint and underlying pre-network exception',async()=>{
     vi.stubGlobal('fetch',vi.fn(()=>{throw new TypeError('Illegal invocation');}));

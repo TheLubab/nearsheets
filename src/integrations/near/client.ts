@@ -11,11 +11,11 @@ import { defaultRpcUrl } from "./network";
  * that network is used rather than sending calls for one network to an endpoint
  * configured for another.
  */
-export function createNearProvider(config: AppEnv = env, network?: NearNetwork) {
+export function createNearProvider(config: AppEnv = env, network?: NearNetwork, requestOptions?:ConstructorParameters<typeof JsonRpcProvider>[1]) {
   const selected = network ?? config.VITE_NEAR_NETWORK;
   const url =
     config.VITE_NEAR_RPC_URL && selected === config.VITE_NEAR_NETWORK
       ? config.VITE_NEAR_RPC_URL
       : defaultRpcUrl(selected);
-  return new JsonRpcProvider({ url });
+  return new JsonRpcProvider({ url },requestOptions);
 }

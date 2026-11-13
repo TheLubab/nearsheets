@@ -15,10 +15,7 @@ import type { AppEnv } from "../../../config/env";
  * Chooses the treasury read source.
  *
  * Direct NEAR RPC reads against the DAO contract are the only source for real
- * treasuries. The optional Trezu API URL is configuration for a later adapter:
- * a URL alone does not prove endpoint or payload compatibility, so it is not
- * turned into a reader. The UI reports that distinction instead of implying
- * the integration works.
+ * treasuries. Additional services require a concrete, verified adapter.
  *
  * Sample data requires explicit source selection. Account names never select it.
  */
@@ -71,11 +68,10 @@ export function createTreasuryReaderForNetwork(
 
 export type IntegrationState =
   | "available"
-  | "configured-no-adapter"
   | "not-configured";
 
 export interface IntegrationStatus {
-  key: "near-rpc" | "demo-data" | "wallet-manifest" | "trezu-api" | "intents-api";
+  key: "near-rpc" | "demo-data" | "wallet-manifest" | "intents-api";
   label: string;
   state: IntegrationState;
   detail: string;
@@ -84,9 +80,8 @@ export interface IntegrationStatus {
 /**
  * Reports integration readiness for display.
  *
- * A configured URL is reported as configured, never as enabled: without an
- * adapter it cannot serve reads or actions. Wallet support comes from the
- * connector's default manifest, which is not an optional integration.
+ * Wallet support comes from the connector's default manifest; a custom
+ * manifest is an optional override.
  */
 export function describeIntegrations(
   config: AppEnv,
@@ -120,14 +115,6 @@ export function describeIntegrations(
       detail: config.VITE_WALLET_MANIFEST_URL
         ? "Hosted manifest configured; it replaces the default wallet list."
         : "Using the connector's default wallet list.",
-    },
-    {
-      key: "trezu-api",
-      label: "Trezu API",
-      state: config.VITE_TREZU_API_URL ? "configured-no-adapter" : "not-configured",
-      detail: config.VITE_TREZU_API_URL
-        ? "URL configured, but no adapter is implemented, so it is not used."
-        : "Not configured.",
     },
     {
       key: "intents-api",

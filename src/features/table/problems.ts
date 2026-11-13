@@ -1,3 +1,4 @@
+import {transientRpcFailure} from '../../integrations/near/read-client';
 import { ZodError } from 'zod';
 import { AccountDoesNotExistError, ContractCodeDoesNotExistError } from 'near-api-js/rpc-errors';
 
@@ -52,17 +53,18 @@ export function readProblem(cause: unknown, network: string, account: string, me
   },{cause});
   // A network failure is different from a contract rejecting a read. Neither
   // establishes that an account is absent. Preserve the cause for inspection.
-  const transport = cause instanceof TypeError || (cause instanceof Error && (/timeout|timed out|fetch failed|failed to fetch|network|429|503|502/i.test(cause.message) || ('type' in cause && cause.type==='RetriesExceeded')));
+  const transport = transientRpcFailure(cause) || cause instanceof TypeError || (cause instanceof Error && (/timeout|timed out|fetch failed|failed to fetch|network|429|503|502/i.test(cause.message) || ('type' in cause && cause.type==='RetriesExceeded')));
   return new TableProblem({
     code:transport?'connection-failed':'read-failed',title:transport?'Could not reach the service':'Blockchain read failed',
     message:`Could not read ${method ? `“${method}” from ` : 'the balance of '}“${account}” on ${network}.`,
-    recovery:transport?'Check your connection, then use Blockchain → Refresh.':'Check the account, network and method arguments. Expand technical details for the service response.',
+    recovery:transport?'The RPC provider may be busy or unreachable. Wait a moment, then use Blockchain → Refresh.':'Check the account, network and method arguments. Expand technical details for the service response.',
     cellError:transport?'#CONNECT!':'#ERROR!',details,
   },{cause});
 }
 
 export function toProblem(cause: unknown): Problem {
   if (cause instanceof TableProblem) return cause.problem;
+  if(cause instanceof Error && cause.name==='TimeoutError')return {code:'read-timeout',title:'Read timed out',message:'The service took too long to respond.',recovery:'Use Blockchain → Refresh to try again.',cellError:'#CONNECT!',details:cause.message};
   if (cause instanceof ZodError) return {
     code:'invalid-data',title:'Unexpected or invalid data',message:'An argument or service response does not match the required format.',
     recovery:'Check the function arguments. If they are correct, refresh and inspect the service response.',cellError:'#VALUE!',details:cause.message,
