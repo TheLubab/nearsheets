@@ -23,6 +23,8 @@ Reviewed against the working tree on 2026-11-12. This describes implemented code
 
 ## Verification record
 
+The README/license revision (2026-11-13) separates the short human introduction from `README.ai.md` and preserves the previous detailed README as `docs/user-guide.md`. MIT is declared in LICENSE and package metadata; third-party material retains its own terms. Typecheck, production build and 108 focused tests across templates, blockchain-workflow, exact-amount, document-persistence and Intents routes passed. Stale template test fixtures/assertions now match the five-account guide, totals at row 11 and independent NEAR_VIEW inspection. No application behavior changed. Local documentation links passed validation; existing build warnings remain. No browser, hosted-site or live-chain checks were performed for this revision.
+
 The Try a transaction sheet uses the requested title “Tutorial: Create a Trezu treasury payment proposal.” Step 1 now shares the highlighted heading style of steps 2 and 3; prerequisites sit in the introduction. Cell coordinates and proposal behavior are unchanged. Browser visual confirmation remains pending.
 
 Getting started now includes five public accounts, with the user-selected Binance and Ref Labs examples first and per-asset totals covering all five. The swap section ends with Blockchain → Refresh instructions. Repeated signing reassurances were removed from the tutorial copy; proposal review/signing instructions and the distinction between proposal submission and payment completion remain. Browser layout confirmation and tests remain deferred.

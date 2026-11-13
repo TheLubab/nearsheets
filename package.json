@@ -2,6 +2,7 @@
   "name": "nearsheets",
   "version": "0.1.7",
   "private": true,
+  "license": "Elastic-2.0",
   "description": "A NEAR table interface.",
   "type": "module",
   "scripts": {

@@ -45,7 +45,7 @@ function engine(id: TemplateId, snapshot?: WorkbookSnapshot, publicDefaults=fals
   const initial=snapshot??getWorkbookTemplate(id).createWorkbook();
   if(!snapshot&&!publicDefaults)for(const data of Object.values(initial.sheets)){
     const reset=(r:number,c:number,v:string)=>{data.cellData![r-1]![c-1]={v,t:1};};
-    if(data.name==='Start here'){reset(6,1,'');reset(7,1,'');reset(8,1,'');}
+    if(data.name==='Start here'){reset(3,2,'');for(let r=6;r<=10;r++)reset(r,1,'');reset(28,2,'');}
     if(data.name==='Funding')reset(4,2,'');
     if(data.name==='Balances'){reset(4,2,'testnet');reset(5,2,'');reset(6,2,'');for(let r=8;r<=10;r++)reset(r,1,'');}
     if(data.name==='Treasury'){reset(4,2,'');reset(5,2,'testnet');}
@@ -95,29 +95,32 @@ describe('template workbooks', () => {
   it('opens the guide on NEAR and verified USDT balances with separate totals', async () => {
     const f = engine('getting-started', undefined, true);
     try {
-      await vi.waitFor(() => expect(f.sheet.getRange('B9').getValue()).toBe(3.75));
+      await vi.waitFor(() => expect(f.sheet.getRange('B11').getValue()).toBe(6.25));
       await vi.waitFor(() => expect(f.sheet.getRange('C6').getValue()).toBe(2));
-      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe(6));
+      await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe(10));
       expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_metadata', {});
       expect(f.view).toHaveBeenCalledWith('mainnet', 'usdt.tether-token.near', 'ft_balance_of', { account_id: 'root.near' });
       expect(f.balance).toHaveBeenCalledWith('mainnet', 'root.near');
       expect(f.balance).toHaveBeenCalledWith('mainnet', 'social.near');
       expect(f.balance).toHaveBeenCalledWith('mainnet', 'ref-finance.sputnik-dao.near');
       f.sheet.getRange('A7').setValue('');
-      await vi.waitFor(() => expect(f.sheet.getRange('B9').getValue()).toBe('Enter accounts and network'));
-      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe('Enter accounts, network and token'));
+      await vi.waitFor(() => expect(f.sheet.getRange('B11').getValue()).toBe('Enter accounts and network'));
+      await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe('Enter accounts, network and token'));
       f.sheet.getRange('A7').setValue('social.near');
       f.view.mockClear();
       f.sheet.getRange('B3').setValue('testnet');
       await vi.waitFor(() => expect(f.sheet.getRange('C6').getValue()).toBe('USDT example uses mainnet'));
-      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe('USDT example uses mainnet'));
-      expect(f.view).not.toHaveBeenCalledWith('testnet', 'usdt.tether-token.near', 'ft_metadata', {});
+      await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe('USDT example uses mainnet'));
+      // The independent NEAR_VIEW example inspects the selected contract on
+      // either network; only the known-mainnet USDT balance example is guarded.
+      expect(f.view.mock.calls.some(([network, account, method]) =>
+        network === 'testnet' && account === 'usdt.tether-token.near' && method === 'ft_balance_of')).toBe(false);
       f.sheet.getRange('B4').setValue('token.testnet');
-      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe(6));
+      await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe(10));
       expect(f.sheet.getRange('C5').getValue()).toBe('Token balance');
       expect(f.view).toHaveBeenCalledWith('testnet', 'token.testnet', 'ft_metadata', {});
       f.sheet.getRange('B4').setValue('');
-      await vi.waitFor(() => expect(f.sheet.getRange('C9').getValue()).toBe('Enter accounts, network and token'));
+      await vi.waitFor(() => expect(f.sheet.getRange('C11').getValue()).toBe('Enter accounts, network and token'));
       expect(f.runtime.operations.size).toBe(0);
     } finally { f.dispose(); }
   });

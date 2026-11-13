@@ -63,6 +63,6 @@ These are registered through `src/features/treasury/formulas/custom-functions.ts
 | `NS_MISSING(field, ...)` | Counts blank fields, including ranges. |
 | `NS_LEGACY_DRAFT(kind, network, treasury, reference)` | Compatibility helper deriving a historical draft ID. It does not create a current executable operation; use SPUTNIK/INTENTS action functions for new work. |
 
-For UI behavior, balance formats, document interchange and live-service limits, see [README](../README.md). For acceptance evidence, see [implementation status](implementation-status.md).
+For UI behavior, balance formats, document interchange and live-service limits, see the [usage reference](user-guide.md). For acceptance evidence, see [implementation status](implementation-status.md).
 
 Intents dry estimates may omit a provider deadline. In that case the quote table labels the sent request deadline as **Estimate cutoff (requested)**; it is not a guaranteed provider route expiry. Explicit funding preparation still requires a provider-returned deadline.
