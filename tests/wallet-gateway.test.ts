@@ -119,7 +119,7 @@ describe("connector wallet gateway", () => {
       walletIcon: "https://example.com/meteor.png",
     });
     expect(connectorRef.current?.network).toBe("testnet");
-    expect(connectorRef.current?.excludedWallets).toEqual(expect.arrayContaining(["ledger", "ethereum-wallets", "wallet-connect", "passkey", "trezu-wallet"]));
+    expect(connectorRef.current?.excludedWallets).toEqual(expect.arrayContaining(["ledger", "ethereum-wallets", "wallet-connect", "passkey", "mynearwallet", "trezu-wallet"]));
   });
 
   it("connects Trezu directly on mainnet and keeps it out of the general selector", async () => {

@@ -14,6 +14,8 @@ import { Dialog } from '../../components/ui/dialog';
 import { loadingToast } from '../../components/ui/toast';
 import type { DocumentWorkspace } from '../documents/application/document-workspace';
 import type { WalletController } from '../wallet/application/wallet-controller';
+import { useWalletState } from '../wallet/application/use-wallet-state';
+import { WalletPanel } from '../wallet/components/WalletPanel';
 import { executePlan, reviewPlan, reconcileExecution, executionProblem, snapshotFingerprint } from './execution';
 import type { ReviewedPlan, Execution } from './execution';
 import { preflightRows, includeRow, groupedAmounts, signingLabel, outcomeLabel } from './batch-review';
@@ -25,6 +27,8 @@ import { ProblemNotice } from './ProblemNotice';
 interface Review {rows:ReviewRow[];snapshot:string;owner:string;plan:ReviewedPlan|null;finished:boolean}
 interface Editor {name:string;target:EditorTarget;editing:boolean;prefill?:string}
 export function TableActions({workspace,wallet,activeSession,children}:{workspace:DocumentWorkspace;wallet:WalletController;activeSession:WorkbookSession|null;children:ReactNode}) {
+ const walletState=useWalletState(wallet);
+ const walletBusy=walletState.status==='connecting'||walletState.status==='disconnecting';
  const [inspect,setInspect]=useState(false),[history,setHistory]=useState(false),[page,setPage]=useState(0);
  const [review,setReview]=useState<Review|null>(null),[editor,setEditor]=useState<Editor|null>(null);
  const [error,setError]=useState<Problem|null>(null),[busy,setBusy]=useState(false);
@@ -105,8 +109,21 @@ export function TableActions({workspace,wallet,activeSession,children}:{workspac
    {records.map(record=><section key={record.id}><p>{record.id}: {record.state}</p><p>{record.transactionHash??'No hash returned. Check wallet transaction history before preparing a replacement.'}</p>{executionProblem(record)&&<ProblemNotice problem={executionProblem(record)!}/>}<button disabled={busy||!record.transactionHash} onClick={()=>void reconcile(record)}>Check transaction</button></section>)}
    {error&&<ProblemNotice problem={error}/>}
   </Dialog>
-  <Dialog open={!!review} onOpenChange={open=>{if(!busy&&!open){setReview(null);setError(null);}}} title={review?.finished?'Action outcomes':'Review selected actions'} description="Each included row is a separate wallet request. Proposal submission still awaits DAO governance; Intents provider progress is tracked separately." className="batch-review" suspendModal={busy}>
+  <Dialog open={!!review} onOpenChange={open=>{if(!busy&&!walletBusy&&!open){setReview(null);setError(null);}}} title={review?.finished?'Action outcomes':'Review selected actions'} description="Each included row is a separate wallet request. Proposal submission still awaits DAO governance; Intents provider progress is tracked separately." className="batch-review" suspendModal={busy||walletBusy}>
    {review&&<>
+    {!review.finished&&!review.plan&&<section aria-label="Execution wallet">
+     <WalletPanel wallet={wallet} state={walletState}/>
+     <p>Connect on the action’s network, then check readiness again. Your account must have permission under the DAO policy.</p>
+     <button disabled={busy||walletBusy||stale||walletState.status!=='connected'} onClick={()=>void run('Checking action readiness…',async session=>{
+      assertCurrent(session);
+      const account=wallet.getState();
+      const rows=await preflightRows(review.rows.map(row=>({...row.source,operation:row.operation})),session.tableRuntime!,wallet);
+      assertCurrent(session);
+      const current=wallet.getState();
+      if(current.status!=='connected'||current.connection?.accountId!==account.connection?.accountId||current.network!==account.network)throw new Error('Wallet changed during preflight. Check readiness again.');
+      setReview({...review,rows,plan:null});
+     })}>Check readiness again</button>
+    </section>}
     <p>{included.length} included · {review.rows.length-included.length} excluded · {review.rows.length} selected actions</p>
     {review.rows.some(r=>r.issues.length||r.duplicate)&&!review.plan&&!review.finished&&<p>Some rows need attention. Explicitly choose an eligible subset. Copies share an identity; only one can be included.</p>}
     {stale&&<p role="alert">Reviewed inputs changed. Close and start a new review.</p>}

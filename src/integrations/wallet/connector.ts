@@ -14,8 +14,9 @@ export async function createWalletConnector(config: AppEnv = env, network?: Near
     network: network ?? config.VITE_NEAR_NETWORK,
     autoConnect: false,
     // Keep the selector focused on NEAR wallets for this version. These are
-    // the dedicated alternative flows in the connector's manifest.
-    excludedWallets: ["ledger", "ethereum-wallets", "wallet-connect", "passkey", ...(excludeTrezu ? ["trezu-wallet"] : [])],
+    // the dedicated alternative flows in the connector's manifest. MyNearWallet
+    // is also excluded from the available wallet choices.
+    excludedWallets: ["ledger", "ethereum-wallets", "wallet-connect", "passkey", "mynearwallet", ...(excludeTrezu ? ["trezu-wallet"] : [])],
     ...(config.VITE_WALLET_MANIFEST_URL
       ? { manifest: config.VITE_WALLET_MANIFEST_URL }
       : {}),

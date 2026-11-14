@@ -96,6 +96,22 @@ describe('read bindings and selective refresh',()=>{
  });
 });
 describe('explicit batch review and sequential outcomes',()=>{
+ it('rechecks a disconnected action after connection while retaining permission checks and never signing',async()=>{
+  const f=fixture();try{
+   const operation=await f.op('one'),cells=[selected(operation,0)];
+   const connected=f.wallet.getState();
+   const getState=vi.spyOn(f.wallet,'getState').mockReturnValue({...connected,status:'disconnected',connection:null});
+   const blocked=await preflightRows(cells,f.runtime,f.wallet);
+   expect(blocked[0]?.included).toBe(false);expect(blocked[0]?.issues.join(' ')).toMatch(/Connect a wallet/);
+   getState.mockReturnValue(connected);
+   const ready=await preflightRows(blocked.map(row=>({...row.source,operation:row.operation})),f.runtime,f.wallet);
+   expect(ready[0]?.issues).toEqual([]);expect(ready[0]?.included).toBe(true);
+   getState.mockReturnValue({...connected,connection:{...connected.connection!,accountId:'outsider.testnet'}});
+   const denied=await preflightRows(cells,f.runtime,f.wallet);
+   expect(denied[0]?.included).toBe(false);expect(denied[0]?.issues.join(' ')).toMatch(/permission/);
+   expect(f.sign).not.toHaveBeenCalled();
+  }finally{f.runtime.dispose();}
+ });
  it('includes all eligible rows, but requires an explicit subset when any row is blocked',async()=>{
   const f=fixture();try{
    const a=await f.op('one'),b=await f.op('two');expect((await preflightRows([selected(a,0),selected(b,1)],f.runtime,f.wallet)).every(r=>r.included)).toBe(true);
