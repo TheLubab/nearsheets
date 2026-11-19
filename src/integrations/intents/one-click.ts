@@ -9,6 +9,14 @@ const units = z.string().regex(/^\d+$/);
 // Explicitly supply the provider's quote/deposit window on every fresh request.
 const QUOTE_WINDOW_MS = 10 * 60 * 1000;
 export const quoteSchema = z.object({correlationId:z.string(),timestamp:z.string(),quote:z.object({amountIn:units,amountOut:units,minAmountOut:units,deadline:z.iso.datetime().optional(),timeEstimate:z.number(),depositAddress:z.string().optional()})});
+export const estimateEvidenceSchema = z.object({
+  origin: tokenSchema,
+  destination: tokenSchema,
+  response: quoteSchema,
+  expiresAt: z.iso.datetime(),
+  expirySource: z.enum(['provider', 'request']),
+});
+export const statusSchema = z.object({correlationId:z.string(),status:z.enum(['PENDING_DEPOSIT','KNOWN_DEPOSIT_TX','PROCESSING','SUCCESS','INCOMPLETE_DEPOSIT','REFUNDED','FAILED']),updatedAt:z.string(),swapDetails:z.unknown().optional()});
 export interface QuoteInput { originAsset:string; destinationAsset:string; amount:string; destinationChain:string; recipient:string; refundTo:string; slippageTolerance:number }
 export function validateAddress(chain:string,address:string): string {
   if (chain === 'near') {
@@ -72,6 +80,6 @@ export class OneClick {
   }
   async status(depositAddress:string,depositMemo?:string,signal?:AbortSignal){
     const query=new URLSearchParams({depositAddress,...(depositMemo?{depositMemo}:{})});
-    return z.object({correlationId:z.string(),status:z.enum(['PENDING_DEPOSIT','KNOWN_DEPOSIT_TX','PROCESSING','SUCCESS','INCOMPLETE_DEPOSIT','REFUNDED','FAILED']),updatedAt:z.string(),swapDetails:z.unknown().optional()}).parse(await this.json(`status?${query}`,undefined,signal));
+    return statusSchema.parse(await this.json(`status?${query}`,undefined,signal));
   }
 }

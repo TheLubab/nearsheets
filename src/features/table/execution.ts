@@ -3,7 +3,8 @@ import type { WalletController } from '../wallet/application/wallet-controller';
 import { WalletCancelledError } from '../../integrations/wallet/gateway';
 import { parseTransactionOutcome } from '../treasury/model/proposal-submissions';
 import type { Operation, TableRuntime } from './runtime';
-import { checkRouteExpiry } from './runtime';
+import { checkRouteExpiry, savedDraftProblem } from './runtime';
+import { TABLE_RESOURCE } from './table-snapshot';
 import { invalidInput, staleData, unavailable, TableProblem } from './problems';
 import type { Problem } from './problems';
 export const executionSchema = z.object({
@@ -28,7 +29,7 @@ export interface ReviewedPlan { operations: Operation[]; snapshot: string; accou
 export function snapshotFingerprint(snapshot: unknown): string {
   if (!snapshot || typeof snapshot !== 'object') return JSON.stringify(snapshot);
   const data = snapshot as {resources?: Array<{name:string}>};
-  return JSON.stringify({...data,resources:data.resources?.filter(item=>item.name !== 'nearsheets.table')});
+  return JSON.stringify({...data,resources:data.resources?.filter(item=>item.name !== TABLE_RESOURCE)});
 }
 
 /** Freeze the exact payload and all dependencies, including policy and current proposal state. */
@@ -38,6 +39,7 @@ export function reviewPlan(operations: Operation[], snapshot: unknown, wallet: W
   if (!operations.length) throw invalidInput('Select actionable cells first.', 'Select cells containing action drafts, then choose Review actions.');
   const ids = new Set<string>();
   for (const op of operations) {
+    if (op.saved) throw savedDraftProblem();
     if (!allowEstimated && op.intents && (op.intents.stage !== 'prepared' || Date.parse(op.intents.expiresAt) <= Date.now())) throw staleData('Prepare a current Intents quote before review.');
     if (ids.has(op.id)) throw invalidInput('Duplicate action reference in selection. Copies represent the same action.', 'Select one copy of each action, or use a new reference for an intentionally separate action.');
     ids.add(op.id);

@@ -1,9 +1,11 @@
 import type { ExecutionJournal } from '../../table/execution';
 import { TableRuntime } from '../../table/runtime';
+import { restoreTableReads, TABLE_RESOURCE } from '../../table/table-snapshot';
 import type { IDisposable, IWorkbookData } from "@univerjs/core";
 import type { FUniver, WorkbookEngineFactory } from "./create-univer-engine";
 import type { FWorkbook } from "@univerjs/sheets/facade";
 import { createUniverEngine } from "./create-univer-engine";
+import { rebindSavedTableCells } from './table-recalculation';
 
 export interface CreateWorkbookSessionOptions {
   /** Element that owns the editor. */
@@ -47,6 +49,9 @@ export function createWorkbookSession(
   const createEngine = options.createEngine ?? createUniverEngine;
   const tableRuntime = new TableRuntime();
   tableRuntime.executions = options.executions ?? {};
+  const savedTable = options.initialWorkbook?.resources?.find(item => item.name === TABLE_RESOURCE);
+  const savedReads = savedTable && restoreTableReads(savedTable.data);
+  if (savedReads?.size) tableRuntime.restoreReads(savedReads);
   const engine = createEngine({
     tableRuntime,
     container: options.container,
@@ -88,8 +93,8 @@ export function createWorkbookSession(
     saveSnapshot: () => {
       const snapshot = getWorkbook()?.save();
       if (!snapshot) return null;
-      const resources = (snapshot.resources ?? []).filter(item => item.name !== 'nearsheets.table');
-      resources.push({name:'nearsheets.table',data:JSON.stringify({
+      const resources = (snapshot.resources ?? []).filter(item => item.name !== TABLE_RESOURCE);
+      resources.push({name:TABLE_RESOURCE,data:JSON.stringify({
         operations:[...tableRuntime.operations], reads:[...tableRuntime.evidence],
       })});
       return {...snapshot,resources};
@@ -97,6 +102,7 @@ export function createWorkbookSession(
     whenReady: () => {
       readyPromise ??= waitForSteadyStage().then(() => {
         if (!disposed) {
+          if (savedReads?.size) rebindSavedTableCells(univerAPI);
           options.onReady?.(session);
         }
       });

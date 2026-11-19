@@ -1,5 +1,5 @@
 import type { SelectedCell } from './selection';
-import { checkRouteExpiry } from './runtime';
+import { checkRouteExpiry, savedDraftProblem } from './runtime';
 import type { Operation, TableRuntime } from './runtime';
 import type { WalletController } from '../wallet/application/wallet-controller';
 import { reviewPlan } from './execution';
@@ -16,6 +16,9 @@ export async function preflightRows(cells:SelectedCell[],runtime:TableRuntime,wa
  for(const cell of cells) {
   const row:ReviewRow={key:JSON.stringify(cell.location),source:cell,operation:cell.operation,issues:cell.problems.map(p=>p.message),duplicate:!!cell.operation&&(counts.get(cell.operation.id)??0)>1,included:false,previous:cell.operation?runtime.executions[cell.operation.id]:undefined};
   if(!row.operation)row.issues.push('No valid action draft. Correct the formula and recalculate.');
+  else if(row.operation.saved || cell.readKeys.some(key=>runtime.evidence.get(key)?.saved)) {
+    row.issues.push(savedDraftProblem().message);
+  }
   else {
    try {
     const op=row.operation;

@@ -4,7 +4,7 @@ const balanceRead = z.object({display:z.string(),baseUnits:z.string(),decimals:z
 
 export function ReadDetails({readKey,read}:{readKey:string;read:ReadEvidence}) {
   const balance = balanceRead.safeParse(read.value);
-  const freshness = read.stale||Date.now()-Date.parse(read.fetchedAt)>(readKey.includes('intents-')?5000:30_000) ? 'stale' : 'recent';
+  const freshness = read.saved ? 'saved · stale' : read.stale||Date.now()-Date.parse(read.fetchedAt)>(readKey.includes('intents-')?5000:30_000) ? 'stale' : 'recent';
   return <details>
     <summary>{balance.success ? `${balance.data.account} · ${balance.data.symbol} · ` : ''}{read.network} · {freshness}</summary>
     {balance.success && <dl>

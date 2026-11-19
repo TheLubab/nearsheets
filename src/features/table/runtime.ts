@@ -3,7 +3,7 @@ import { boundedRead } from '../../integrations/http/request';
 import { ReadBindings } from './read-bindings';
 import type { CalculationContext } from './read-bindings';
 import { env } from '../../config/env';
-import { OneClick } from '../../integrations/intents/one-click';
+import { estimateEvidenceSchema, OneClick, statusSchema } from '../../integrations/intents/one-click';
 import type { QuoteInput } from '../../integrations/intents/one-click';
 import type { ExecutionJournal } from './execution';
 import { QueryClient } from '@tanstack/react-query';
@@ -21,6 +21,7 @@ export type TableResult = CellValue | CellValue[][];
 export interface Operation {
   id: string;
   revision: string;
+  saved?: boolean;
   kind: string;
   network: NearNetwork;
   source: string;
@@ -34,7 +35,14 @@ export interface Operation {
   proposal?: unknown;
   intents?: {input:QuoteInput; stage:'estimated'|'prepared'; quote:unknown; expiresAt:string; depositAddress?:string; providerId:string};
 }
-export interface ReadEvidence { network: NearNetwork; fetchedAt: string; value: unknown; stale?:boolean }
+export interface ReadEvidence {
+  network: NearNetwork;
+  fetchedAt: string;
+  value: unknown;
+  rawValue?: unknown;
+  stale?: boolean;
+  saved?: boolean;
+}
 export interface TablePorts {
   view(network: NearNetwork, contract: string, method: string, args: Record<string, unknown>, signal?:AbortSignal): Promise<unknown>;
   transaction?(network: NearNetwork, hash: string, signer: string): Promise<unknown>;
@@ -46,6 +54,7 @@ export const rpcPorts: TablePorts = {
   balance: async (network, accountId, signal) => (await nearReadClient.read(network,provider=>provider.viewAccount({accountId}),signal)).amount.toString(),
 };
 const networkSchema = z.enum(['mainnet', 'testnet']);
+const unitsSchema = z.string().regex(/^\d+$/);
 const metadataSchema = z.object({spec: z.literal('ft-1.0.0'), name: z.string(), symbol: z.string().min(1), decimals: z.number().int().min(0).max(24)});
 const account = (value: unknown) => {
   const checked = checkNearAccountId(value);
@@ -81,6 +90,7 @@ export class TableRuntime {
   readonly diagnostics = new CellDiagnostics();
   readonly operations = new Map<string, Operation>();
   readonly evidence = new Map<string, ReadEvidence>();
+  private savedKeys = new Set<string>();
   private epoch = 0;
   private disposed = false;
   private keyVersions = new Map<string,number>();
@@ -89,25 +99,59 @@ export class TableRuntime {
   requestVersion() { return this.epoch; }
   accept(version:number) { if(this.disposed || this.epoch!==version)throw staleData('Read superseded. Refresh the cell.'); }
   constructor(readonly ports: TablePorts = rpcPorts, readonly query = new QueryClient(), readonly intents:OneClick|null = env.VITE_INTENTS_API_URL ? new OneClick(env.VITE_INTENTS_API_URL) : null) {}
-  async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}, context?:CalculationContext) {
-    const key = [network, contract, method, args];
-    context?.keys.add(JSON.stringify(key));
-    const epoch = this.epoch;
-    const keyVersion=this.keyVersions.get(JSON.stringify(key));
-    const value = await this.query.fetchQuery({queryKey: key, staleTime: method==='ft_metadata' ? 300_000 : 30_000, retry:false,
-      queryFn: async ({signal}) => {
-        try { return await boundedRead(abort=>this.ports.view(network, contract, method, args,abort),signal); }
-        catch(cause) { throw readProblem(cause,network,contract,method); }
-      }});
-    if (this.disposed || epoch !== this.epoch || keyVersion!==this.keyVersions.get(JSON.stringify(key))) throw staleData('Read superseded. Recalculate.');
-    this.evidence.set(JSON.stringify(key), {network, value, fetchedAt: new Date(this.query.getQueryState(key)?.dataUpdatedAt ?? Date.now()).toISOString()});
+  restoreReads(reads: ReadonlyMap<string, ReadEvidence>) {
+    for (const [key, read] of reads) {
+      this.evidence.set(key, read);
+      this.savedKeys.add(key);
+    }
+  }
+  async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}, context?: CalculationContext) {
+    return this.cached([network, contract, method, args], signal => this.ports.view(network, contract, method, args, signal),
+      method === 'ft_metadata' ? 300_000 : 30_000, z.unknown(), context)
+      .catch(cause => { throw readProblem(cause, network, contract, method); });
+  }
+  private async cached<T>(key: readonly unknown[], queryFn: (signal: AbortSignal) => Promise<T>, staleTime: number, savedSchema: z.ZodType<T>, context?: CalculationContext): Promise<T> {
+    const encodedKey = JSON.stringify(key);
+    const version = this.epoch;
+    this.accept(version);
+    context?.keys.add(encodedKey);
+    const saved = this.savedKeys.has(encodedKey) ? this.evidence.get(encodedKey) : undefined;
+    if (context && saved) {
+      const decoded = savedSchema.safeParse(saved.rawValue === undefined ? saved.value : saved.rawValue);
+      if (decoded.success) {
+        context.savedKeys.add(encodedKey);
+        return decoded.data;
+      }
+      this.savedKeys.delete(encodedKey);
+    }
+
+    const keyVersion = this.keyVersions.get(encodedKey);
+    const value = await this.query.fetchQuery({ queryKey: key, queryFn: ({ signal }) => boundedRead(queryFn, signal), staleTime, retry: false });
+    this.accept(version);
+    if (keyVersion !== this.keyVersions.get(encodedKey)) throw staleData('Read superseded. Refresh the cell.');
+    // Live checks have their own cache; they must not relabel saved formula results.
+    if (!saved || !this.savedKeys.has(encodedKey)) this.evidence.set(encodedKey, {
+      network: key[0] === 'testnet' ? 'testnet' : 'mainnet',
+      value,
+      fetchedAt: new Date(this.query.getQueryState(key)?.dataUpdatedAt ?? Date.now()).toISOString(),
+    });
     return value;
   }
-  async cached<T>(key:readonly unknown[],queryFn:(signal:AbortSignal)=>Promise<T>,staleTime:number,context?:CalculationContext):Promise<T> {
-    context?.keys.add(JSON.stringify(key));const version=this.epoch;const keyVersion=this.keyVersions.get(JSON.stringify(key));
-    const value=await this.query.fetchQuery({queryKey:key,queryFn:({signal})=>boundedRead(queryFn,signal),staleTime,retry:false});this.accept(version);
-    if(keyVersion!==this.keyVersions.get(JSON.stringify(key)))throw staleData('Read superseded. Refresh the cell.');
-    this.evidence.set(JSON.stringify(key),{network:key[0]==='testnet'?'testnet':'mainnet',value,fetchedAt:new Date(this.query.getQueryState(key)?.dataUpdatedAt??Date.now()).toISOString()});return value;
+  private recordBalance(key: readonly unknown[], units: string, value: unknown) {
+    const encodedKey = JSON.stringify(key);
+    const read = this.evidence.get(encodedKey);
+    if (read && (read.rawValue ?? read.value) === units) {
+      this.evidence.set(encodedKey, { ...read, rawValue: units, value });
+    }
+  }
+  private intentsProvider() {
+    if (!this.intents) throw unavailable('The Intents provider is not configured.');
+    return this.intents;
+  }
+  private recordOperation(label: string, data: Omit<Operation, 'revision' | 'saved'>, context?: CalculationContext) {
+    const operation = { ...data, revision: JSON.stringify(data) };
+    this.operations.set(label, context?.savedKeys.size ? { ...operation, saved: true } : operation);
+    return label;
   }
   async calculate(name:string,args:unknown[],context?:CalculationContext):Promise<TableResult> {
     const version=this.epoch;
@@ -131,9 +175,10 @@ export class TableRuntime {
       if (name === 'NS_RECEIPT') return [['Attempt state','Transaction','Signer','Recorded at'],[record.state,record.transactionHash,record.account,record.at]];
       const prior = JSON.parse(record.revision) as Operation;
       if (!prior.intents?.depositAddress) throw new Error('No prepared Intents deposit is recorded.');
-      if (!this.intents) throw unavailable('Intents is not configured.');
-      const result = await this.cached(['intents-status',prior.intents.depositAddress],signal=>this.intents!.status(prior.intents!.depositAddress!,undefined,signal),5000,context);
-      return [['Provider stage','Updated at','Details'],[result.status,result.updatedAt,JSON.stringify(result.swapDetails ?? {})]];
+      const depositAddress = prior.intents.depositAddress;
+      const key = ['intents-status',depositAddress];
+      const result = await this.cached(key,signal=>this.intentsProvider().status(depositAddress,undefined,signal),5000,statusSchema,context);
+      return [[context?.savedKeys.has(JSON.stringify(key)) ? 'Saved provider stage' : 'Provider stage','Updated at','Details'],[result.status,result.updatedAt,JSON.stringify(result.swapDetails ?? {})]];
     }
     if (name === 'NS_STATUS') {
       const op = this.operations.get(text(args[0]));
@@ -150,12 +195,13 @@ export class TableRuntime {
       return scalar(draft[field as keyof Operation]);
     }
     if (name === 'INTENTS_QUOTE') {
-      if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input = {originAsset:text(args[0]),destinationAsset:text(args[1]),amount:text(args[2]),destinationChain:text(args[3]),recipient:text(args[4]),refundTo:text(args[5]),slippageTolerance:Number(args[6])};
-      const quote = await this.cached(['intents-estimate',input],signal=>this.intents!.estimate(input,signal),5000,context);
-      if (Date.parse(quote.expiresAt) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
+      const key = ['intents-estimate', input];
+      const quote = await this.cached(key,signal=>this.intentsProvider().estimate(input,signal),5000,estimateEvidenceSchema,context);
+      const saved = context?.savedKeys.has(JSON.stringify(key));
+      if (!saved && Date.parse(quote.expiresAt) <= Date.now()) throw staleData('Quote expired. Refresh the estimate.');
       const amounts = quote.response.quote;
-      return [['Estimate · no funding instructions','Value','Token / unit'],
+      return [[saved ? 'Saved estimate · no funding instructions' : 'Estimate · no funding instructions','Value','Token / unit'],
         ['Input amount',amountFromBaseUnits(amounts.amountIn,quote.origin.decimals)!.display,quote.origin.symbol],
         ['Output amount',amountFromBaseUnits(amounts.amountOut,quote.destination.decimals)!.display,quote.destination.symbol],
         ['Minimum output',amountFromBaseUnits(amounts.minAmountOut,quote.destination.decimals)!.display,quote.destination.symbol],
@@ -172,27 +218,22 @@ export class TableRuntime {
     const network = checkedNetwork.data;
     if (name === 'NEAR_BALANCE' || name === 'NEAR_BALANCE_EXACT') {
       const id = account(args[0]);
-      const units = await this.cached([network,id,'balance'], async signal => {
-        try { return await this.ports.balance(network,id,signal); }
-        catch(cause) { throw readProblem(cause,network,id); }
-      },30_000,context);
+      const key = [network, id, 'balance'];
+      const units = await this.cached(key, signal => this.ports.balance(network,id,signal), 30_000, unitsSchema, context)
+        .catch(cause => { throw readProblem(cause, network, id); });
       const amount = amountFromBaseUnits(units,24);
       if (!amount) throw new Error('Invalid native balance.');
-      accept();this.evidence.set(JSON.stringify([network,id,'balance']), {network, fetchedAt: new Date(this.query.getQueryState([network,id,'balance'])?.dataUpdatedAt ?? Date.now()).toISOString(), value: {...amount, asset:'near', symbol:'NEAR', account:id, numericValueIsApproximate:true}});
+      accept();this.recordBalance(key, units, {...amount, asset:'near', symbol:'NEAR', account:id, numericValueIsApproximate:true});
       return name === 'NEAR_BALANCE_EXACT' ? amount.display : Number(amount.display);
     }
     if (name === 'FT_BALANCE' || name === 'FT_BALANCE_EXACT') {
       const token = account(args[0]), owner = account(args[1]);
       const [rawMetadata,rawUnits] = await Promise.all([read(network,token,'ft_metadata'),read(network,token,'ft_balance_of',{account_id:owner})]);
       const metadata = metadataSchema.parse(rawMetadata);
-      const units = z.string().regex(/^\d+$/).parse(rawUnits);
+      const units = unitsSchema.parse(rawUnits);
       const amount = amountFromBaseUnits(units,metadata.decimals)!;
       const balanceKey = [network,token,'ft_balance_of',{account_id:owner}];
-      accept();this.evidence.set(JSON.stringify(balanceKey), {
-        network,
-        fetchedAt: new Date(this.query.getQueryState(balanceKey)?.dataUpdatedAt ?? Date.now()).toISOString(),
-        value: {...amount, asset:token, symbol:metadata.symbol, name:metadata.name, account:owner, numericValueIsApproximate:true},
-      });
+      accept();this.recordBalance(balanceKey, units, {...amount, asset:token, symbol:metadata.symbol, name:metadata.name, account:owner, numericValueIsApproximate:true});
       return name === 'FT_BALANCE_EXACT' ? amount.display : Number(amount.display);
     }
     if (name === 'NEAR_VIEW') {
@@ -241,14 +282,14 @@ export class TableRuntime {
       const transaction:WalletTransaction = {receiverId:source,actions:[{type:'FunctionCall',params:{methodName:'add_proposal',args:{proposal:{description:`NearSheets ${reference}`,kind:{FunctionCall:{receiver_id:recipient,actions:[{method_name:targetMethod,args:encoded,gas,deposit:baseUnits}]}}}},gas:'200000000000000',deposit:bond}}]};
       const data = {id,kind:name,network,source,recipient,asset,decimals,amount,baseUnits,policy,transaction};
       const label = `Draft · ${isStake ? 'Stake' : targetMethod} · ${amount} NEAR → ${recipient} · ${source} · ${reference}`;
-      accept();this.operations.set(label,{...data,revision:JSON.stringify(data)});return label;
+      accept();
+      return this.recordOperation(label, data, context);
     }
     if (name === 'INTENTS_SWAP') {
       if (network !== 'mainnet') throw unavailable('1Click has no testnet route.');
-      if (!this.intents) throw unavailable('The Intents provider is not configured.');
       const input:QuoteInput = {originAsset:text(args[2]),destinationAsset:text(args[3]),amount:text(args[4]),destinationChain:text(args[5]),recipient:text(args[6]),refundTo:account(args[7]),slippageTolerance:Number(args[8])};
       if (input.refundTo !== source) throw invalidInput('DAO-funded swaps must refund to the source DAO.');
-      const estimate = await this.cached(['intents-estimate',input],signal=>this.intents!.estimate(input,signal),5000,context);
+      const estimate = await this.cached(['intents-estimate',input],signal=>this.intentsProvider().estimate(input,signal),5000,estimateEvidenceSchema,context);
       if (estimate.origin.blockchain !== 'near' || !input.originAsset.startsWith('nep141:')) throw unavailable('DAO funding currently supports NEAR fungible tokens only.');
       asset = account(input.originAsset.slice(7));
       const meta = metadataSchema.parse(await read(network,asset,'ft_metadata'));
@@ -258,9 +299,9 @@ export class TableRuntime {
       const data = {id,kind:name,network,source,recipient,asset,decimals,amount,baseUnits,policy,
         transaction:{receiverId:source,actions:[]} as WalletTransaction,
         intents:{input,stage:'estimated' as const,quote:estimate.response,expiresAt:estimate.expiresAt,providerId:estimate.response.correlationId}};
-      const op = {...data,revision:JSON.stringify(data)};
       const label = `Swap draft · ${amount} ${asset} → ${recipient} · ${source} · ${reference}`;
-      accept();this.operations.set(label,op);return label;
+      accept();
+      return this.recordOperation(label, data, context);
     }
     if (name === 'SPUTNIK_TRANSFER') {
       recipient = account(args[2]); asset = text(args[4]);
@@ -275,19 +316,21 @@ export class TableRuntime {
       const action = z.enum(['VoteApprove','VoteReject','VoteRemove']).parse(args[3]);
       proposalState = await read(network,source,'get_proposal',{id:proposalId});
       z.object({status:z.literal('InProgress')}).parse(proposalState);
-      checkRouteExpiry(proposalState,action);
+      if (!context?.savedKeys.has(JSON.stringify([network,source,'get_proposal',{id:proposalId}]))) {
+        checkRouteExpiry(proposalState,action);
+      }
       method = 'act_proposal'; callArgs = {id:proposalId,action};
     } else throw new Error('Unknown table function.');
     const transaction: WalletTransaction = {receiverId:source,actions:[{type:'FunctionCall',params:{methodName:method,args:callArgs,gas:'200000000000000',deposit}}]};
     const data = {id,kind:name,network,source,recipient,asset,decimals,amount,baseUnits,transaction,policy,proposal:proposalState};
-    const operation: Operation = {...data,revision:JSON.stringify(data)};
     const label = `${name === 'SPUTNIK_TRANSFER' ? `Draft · ${amount} ${asset} → ${recipient}` : `Draft · ${text(args[3])} #${text(args[2])}`} · ${source} · ${network} · ${reference}`;
-    accept();this.operations.set(label,operation);
-    return label;
+    accept();
+    return this.recordOperation(label, data, context);
   }
   /** Explicit preparation allocates a funding target; formulas cannot call this. */
   async prepare(op:Operation): Promise<Operation> {
     if (!op.intents) return op;
+    if (op.saved) throw savedDraftProblem();
     if (this.executions[op.id] && !['cancelled','failed'].includes(this.executions[op.id]!.state)) throw new Error('This swap has an execution attempt. A replacement quote requires a new reference and proposal.');
     if (op.intents.stage === 'prepared' && Date.parse(op.intents.expiresAt) > Date.now()) return op;
     if (!this.intents) throw unavailable('Intents is not configured.');
@@ -311,10 +354,14 @@ export class TableRuntime {
   refresh(keys?:ReadonlySet<string>) {
     if(!keys) {this.epoch++;this.diagnostics.clear();this.intents?.clearCache();}
     this.refreshListeners.forEach(listener=>listener(keys));
-    if(keys) {for(const key of keys){this.keyVersions.set(key,(this.keyVersions.get(key)??0)+1);this.query.removeQueries({queryKey:JSON.parse(key) as unknown[],exact:true});const read=this.evidence.get(key);if(read)read.stale=true;}}
-    else {this.query.clear();for(const read of this.evidence.values())read.stale=true;}
+    if(keys) {for(const key of keys){this.savedKeys.delete(key);this.keyVersions.set(key,(this.keyVersions.get(key)??0)+1);this.query.removeQueries({queryKey:JSON.parse(key) as unknown[],exact:true});const read=this.evidence.get(key);if(read)read.stale=true;}}
+    else {this.savedKeys.clear();this.query.clear();for(const read of this.evidence.values())read.stale=true;}
   }
   dispose() { this.disposed = true; this.refresh();this.bindings.clear();this.operations.clear();this.refreshListeners.clear(); }
+}
+
+export function savedDraftProblem() {
+  return staleData('This draft uses saved blockchain data. Refresh the source formula’s blockchain reads before reviewing it.');
 }
 
 export function checkRouteExpiry(proposal:unknown,action:string) {
