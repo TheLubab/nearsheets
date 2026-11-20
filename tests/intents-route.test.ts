@@ -79,7 +79,7 @@ describe('1Click estimation, explicit preparation and expiry',()=>{
    expect(requests.filter(request=>request.body?.dry===false)).toHaveLength(1);
    const sign=vi.fn(async()=>({status:{SuccessValue:btoa('0')},transaction:{hash:'hash'}}));
    const wallet={getState:()=>({status:'connected',network:'mainnet',connection:{accountId:'signer.near'}}),signAndSendTransaction:sign} as unknown as WalletController;
-   const plan=reviewPlan([prepared],{},wallet),journal:ExecutionJournal={};
+   const plan=await reviewPlan([prepared],{},wallet,runtime),journal:ExecutionJournal={};
    await executePlan({plan,wallet,runtime,snapshot:()=>({}),journal:()=>journal,record:async record=>{journal[record.id]=record;}});
    expect(sign).toHaveBeenCalledWith(expect.objectContaining({receiverId:'dao.near'}));
    expect(JSON.stringify(prepared.transaction)).toContain('deposit.near');expect(JSON.stringify(prepared.transaction)).toContain('1000001');

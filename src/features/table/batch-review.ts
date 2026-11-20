@@ -29,7 +29,7 @@ export async function preflightRows(cells:SelectedCell[],runtime:TableRuntime,wa
     if(JSON.stringify(policy)!==JSON.stringify(op.policy))throw new Error('DAO policy changed. Refresh and review again.');
     if(op.asset&&op.asset!=='near') {runtime.query.removeQueries({queryKey:[op.network,op.asset,'ft_metadata']});const meta=await runtime.read(op.network,op.asset,'ft_metadata') as {decimals?:unknown};if(meta.decimals!==op.decimals)throw new Error('Token precision changed. Refresh and review again.');}
     if(op.kind==='SPUTNIK_VOTE')checkRouteExpiry(proposal,String(op.transaction.actions[0]?.params.args.action));
-    reviewPlan([op],null,wallet,true);
+    await reviewPlan([op],null,wallet,runtime,true);
     if(row.previous&&!['failed','cancelled'].includes(row.previous.state))throw new Error('Previously attempted. Reconcile the transaction or wallet history before any replacement.');
    }catch(cause){row.issues.push(toProblem(cause).message);}
   }

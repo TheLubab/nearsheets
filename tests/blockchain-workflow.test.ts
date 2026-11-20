@@ -96,6 +96,33 @@ describe('read bindings and selective refresh',()=>{
  });
 });
 describe('explicit batch review and sequential outcomes',()=>{
+ it('uses the exact Sputnik delegation threshold and checks it again before signing',async()=>{
+  const f=fixture();
+  try {
+   const minimum = '9007199254740993';
+   let weight: unknown = '9007199254740992';
+   const memberPolicy = {proposal_bond:'100',roles:[{kind:{Member:minimum},permissions:['transfer:AddProposal']}]};
+   f.view.mockImplementation(async (_network,_contract,method) => {
+    if (method === 'get_policy') return memberPolicy;
+    if (method === 'delegation_balance_of') return weight;
+    return {spec:'ft-1.0.0',name:'Token',symbol:'TOK',decimals:6};
+   });
+   const operation = await f.op('weighted');
+   const cells = [selected(operation,0)];
+   expect((await preflightRows(cells,f.runtime,f.wallet))[0]?.issues.join(' ')).toMatch(/permission/);
+   weight = Number(minimum);
+   expect((await preflightRows(cells,f.runtime,f.wallet))[0]?.issues.join(' ')).toMatch(/valid delegated voting balance/);
+   weight = minimum;
+   expect((await preflightRows(cells,f.runtime,f.wallet))[0]?.included).toBe(true);
+   expect(f.view).toHaveBeenCalledWith('testnet','dao.testnet','delegation_balance_of',{account_id:'signer.testnet'},expect.any(AbortSignal));
+   const plan = await reviewPlan([operation],{},f.wallet,f.runtime);
+   weight = '0';
+   const record = vi.fn(async () => {});
+   await expect(executePlan({plan,wallet:f.wallet,runtime:f.runtime,snapshot:()=>({}),journal:()=>({}),record})).rejects.toThrow(/permission/);
+   expect(record).not.toHaveBeenCalled();
+   expect(f.sign).not.toHaveBeenCalled();
+  } finally { f.runtime.dispose(); }
+ });
  it('rechecks a disconnected action after connection while retaining permission checks and never signing',async()=>{
   const f=fixture();try{
    const operation=await f.op('one'),cells=[selected(operation,0)];
@@ -130,11 +157,11 @@ describe('explicit batch review and sequential outcomes',()=>{
   }finally{f.runtime.dispose();}
  });
  it('never allocates deposits during preflight and requires prepared quotes for final review',async()=>{
-  const f=fixture();try{const a=await f.op('one');const swap={...a,kind:'INTENTS_SWAP',intents:{stage:'estimated',expiresAt:'2099-01-01T00:00:00Z'}} as Operation;const prepare=vi.spyOn(f.runtime,'prepare');const rows=await preflightRows([selected(swap,0)],f.runtime,f.wallet);expect(rows[0]?.included).toBe(true);expect(prepare).not.toHaveBeenCalled();expect(()=>reviewPlan([swap],{},f.wallet)).toThrow(/Prepare/);}finally{f.runtime.dispose();}
+  const f=fixture();try{const a=await f.op('one');const swap={...a,kind:'INTENTS_SWAP',intents:{stage:'estimated',expiresAt:'2099-01-01T00:00:00Z'}} as Operation;const prepare=vi.spyOn(f.runtime,'prepare');const rows=await preflightRows([selected(swap,0)],f.runtime,f.wallet);expect(rows[0]?.included).toBe(true);expect(prepare).not.toHaveBeenCalled();await expect(reviewPlan([swap],{},f.wallet,f.runtime)).rejects.toThrow(/Prepare/);}finally{f.runtime.dispose();}
  });
  it.each(['cancelled','failed','indeterminate'] as const)('stops after %s and leaves remaining actions untouched',async(state)=>{
   const f=fixture();try{const a=await f.op('one'),b=await f.op('two');if(state==='cancelled')f.sign.mockRejectedValue(new WalletCancelledError());else if(state==='failed')f.sign.mockResolvedValue({status:{Failure:{error:'bad'}}} as never);else f.sign.mockRejectedValue(new Error('disconnected'));
-   const journal:ExecutionJournal={};await executePlan({plan:reviewPlan([a,b],{},f.wallet),wallet:f.wallet,runtime:f.runtime,snapshot:()=>({}),journal:()=>journal,record:async r=>{journal[r.id]=r;}});
+   const journal:ExecutionJournal={};await executePlan({plan:await reviewPlan([a,b],{},f.wallet,f.runtime),wallet:f.wallet,runtime:f.runtime,snapshot:()=>({}),journal:()=>journal,record:async r=>{journal[r.id]=r;}});
    expect(f.sign).toHaveBeenCalledTimes(1);expect(journal[a.id]?.state).toBe(state);expect(journal[b.id]).toBeUndefined();expect(outcomeLabel({key:'b',source:selected(b,1),operation:b,issues:[],duplicate:false,included:true},true)).toBe('Not attempted');
   }finally{f.runtime.dispose();}
  });

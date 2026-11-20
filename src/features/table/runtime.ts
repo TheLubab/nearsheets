@@ -105,9 +105,9 @@ export class TableRuntime {
       this.savedKeys.add(key);
     }
   }
-  async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}, context?: CalculationContext) {
+  async read(network: NearNetwork, contract: string, method: string, args: Record<string, unknown> = {}, context?: CalculationContext, staleTime = method === 'ft_metadata' ? 300_000 : 30_000) {
     return this.cached([network, contract, method, args], signal => this.ports.view(network, contract, method, args, signal),
-      method === 'ft_metadata' ? 300_000 : 30_000, z.unknown(), context)
+      staleTime, z.unknown(), context)
       .catch(cause => { throw readProblem(cause, network, contract, method); });
   }
   private async cached<T>(key: readonly unknown[], queryFn: (signal: AbortSignal) => Promise<T>, staleTime: number, savedSchema: z.ZodType<T>, context?: CalculationContext): Promise<T> {

@@ -33,8 +33,36 @@ export function snapshotFingerprint(snapshot: unknown): string {
   return JSON.stringify({...data,resources:data.resources?.filter(item=>item.name !== TABLE_RESOURCE)});
 }
 
+const delegationAmount = z.string().regex(/^[0-9]{1,39}$/).transform(BigInt)
+  .refine(amount => amount <= (1n << 128n) - 1n);
+
+async function assertPermission(op: Operation, policyValue: unknown, accountId: string, runtime: TableRuntime) {
+  const policy = z.object({roles:z.array(z.object({kind:z.unknown(), permissions:z.array(z.string())}))}).parse(policyValue);
+  const action = op.kind === 'SPUTNIK_VOTE' ? String(op.transaction.actions[0]?.params.args.action) : 'AddProposal';
+  const proposalKind = z.object({kind:z.record(z.string(),z.unknown())}).safeParse(op.proposal);
+  const votedKind = proposalKind.success ? (proposalKind.data.kind.Transfer ? 'transfer' : proposalKind.data.kind.FunctionCall ? 'call' : '*') : '*';
+  const kind = op.kind === 'SPUTNIK_VOTE' ? votedKind : ['SPUTNIK_CALL','SPUTNIK_STAKE'].includes(op.kind) ? 'call' : 'transfer';
+  const permissions = [`${kind}:${action}`, `*:${action}`, `${kind}:*`, '*:*'];
+  const thresholds: bigint[] = [];
+  for (const role of policy.roles) {
+    if (!role.permissions.some(permission => permissions.includes(permission))) continue;
+    if (role.kind === 'Everyone' || z.object({Everyone:z.object({})}).safeParse(role.kind).success) return;
+    const group = z.object({Group:z.array(z.string())}).safeParse(role.kind);
+    if (group.success && group.data.Group.includes(accountId)) return;
+    const member = z.object({Member:delegationAmount}).safeParse(role.kind);
+    if (member.success) thresholds.push(member.data.Member);
+  }
+  if (thresholds.length) {
+    const args = {account_id:accountId};
+    const balance = delegationAmount.safeParse(await runtime.read(op.network,op.source,'delegation_balance_of',args,undefined,0));
+    if (!balance.success) throw unavailable('Sputnik did not return a valid delegated voting balance.');
+    if (thresholds.some(threshold => balance.data >= threshold)) return;
+  }
+  throw invalidInput('Current policy does not establish signing permission for this account.', 'Connect an account whose permissions can be verified against the DAO policy.');
+}
+
 /** Freeze the exact payload and all dependencies, including policy and current proposal state. */
-export function reviewPlan(operations: Operation[], snapshot: unknown, wallet: WalletController, allowEstimated = false): ReviewedPlan {
+export async function reviewPlan(operations: Operation[], snapshot: unknown, wallet: WalletController, runtime: TableRuntime, allowEstimated = false): Promise<ReviewedPlan> {
   const state = wallet.getState();
   if (!state.connection || state.status !== 'connected') throw invalidInput('Connect a wallet to review execution.', 'Use the wallet control to connect, then review the selected actions again.');
   if (!operations.length) throw invalidInput('Select actionable cells first.', 'Select cells containing action drafts, then choose Review actions.');
@@ -45,18 +73,11 @@ export function reviewPlan(operations: Operation[], snapshot: unknown, wallet: W
     if (ids.has(op.id)) throw invalidInput('Duplicate action reference in selection. Copies represent the same action.', 'Select one copy of each action, or use a new reference for an intentionally separate action.');
     ids.add(op.id);
     if (op.network !== state.network) throw invalidInput('The wallet and action networks differ.', 'Connect the wallet on the action’s network, then review again.');
-    const policy = z.object({roles:z.array(z.object({kind:z.unknown(), permissions:z.array(z.string())}))}).parse(op.policy);
-    const action = op.kind === 'SPUTNIK_VOTE' ? String(op.transaction.actions[0]?.params.args.action) : 'AddProposal';
-    const proposalKind = z.object({kind:z.record(z.string(),z.unknown())}).safeParse(op.proposal);
-    const votedKind = proposalKind.success ? (proposalKind.data.kind.Transfer ? 'transfer' : proposalKind.data.kind.FunctionCall ? 'call' : '*') : '*';
-    const kind = op.kind === 'SPUTNIK_VOTE' ? votedKind : ['SPUTNIK_CALL','SPUTNIK_STAKE'].includes(op.kind) ? 'call' : 'transfer';
-    const authorized = policy.roles.some(role => {
-      const group = z.object({Group:z.array(z.string())}).safeParse(role.kind);
-      const member = role.kind === 'Everyone' || z.object({Everyone:z.object({})}).safeParse(role.kind).success || (group.success && group.data.Group.includes(state.connection!.accountId));
-      return member && role.permissions.some(permission => [`${kind}:${action}`,`*:${action}`,`${kind}:*`,'*:*'].includes(permission));
-    });
-    if (!authorized) throw invalidInput('Current policy does not establish signing permission for this account.', 'Connect an account whose permissions can be verified against the DAO policy.');
+    await assertPermission(op, op.policy, state.connection.accountId, runtime);
   }
+  const current = wallet.getState();
+  if (current.status !== 'connected' || current.connection?.accountId !== state.connection.accountId || current.network !== state.network)
+    throw staleData('Wallet account or network changed. Review again.');
   return structuredClone({operations,snapshot:snapshotFingerprint(snapshot),account:state.connection.accountId,network:state.network});
 }
 
@@ -94,6 +115,7 @@ export async function executePlan(options: {
       const metadata = z.object({decimals:z.number()}).parse(await runtime.read(op.network,op.asset,'ft_metadata'));
       if (metadata.decimals !== op.decimals) throw staleData('Token metadata changed. Review again.');
     }
+    await assertPermission(op, policy, plan.account, runtime);
     unchanged();
     const pending: Execution = {attempts:previous ? [...(previous.attempts ?? []),{at:previous.at,revision:previous.revision,state:previous.state,transactionHash:previous.transactionHash}] : [],id:op.id,revision:op.revision,account:plan.account,at:new Date().toISOString(),state:'awaiting-wallet',transactionHash:null,message:null};
     await options.record(pending);

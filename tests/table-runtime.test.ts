@@ -41,7 +41,7 @@ describe('table runtime and deliberate execution',()=>{
     expect(op.transaction.actions[0]?.params.args).toEqual({proposal:{description:'NearSheets invoice-1',kind:{Transfer:{token_id:'token.testnet',receiver_id:'alice.testnet',amount:'1000001'}}}});
     const journal: ExecutionJournal={}; const events:string[]=[];
     sign.mockImplementation(async()=>{events.push('sign');expect(journal[op.id]?.state).toBe('awaiting-wallet');return {status:{SuccessValue:''},transaction:{hash:'hash'}};});
-    const plan = reviewPlan([op],{cells:'unchanged'},wallet);
+    const plan = await reviewPlan([op],{cells:'unchanged'},wallet,runtime);
     await executePlan({plan,wallet,runtime,snapshot:()=>({cells:'unchanged'}),journal:()=>journal,record:async record=>{events.push(record.state);journal[record.id]=record;}});
     expect(events).toEqual(['awaiting-wallet','sign','confirmed']);
     await expect(executePlan({plan,wallet,runtime,snapshot:()=>({cells:'unchanged'}),journal:()=>journal,record:async()=>{}})).rejects.toThrow(/already has/);
@@ -50,7 +50,7 @@ describe('table runtime and deliberate execution',()=>{
   it('rejects stale previews and failed attempt persistence before wallet submission',async()=>{
     const {runtime,wallet,sign}=fixture();
     const label=await runtime.calculate('SPUTNIK_TRANSFER',transferArgs);
-    const plan=reviewPlan([runtime.operations.get(String(label))!],{v:1},wallet);
+    const plan=await reviewPlan([runtime.operations.get(String(label))!],{v:1},wallet,runtime);
     await expect(executePlan({plan,wallet,runtime,snapshot:()=>({v:2}),journal:()=>({}),record:async()=>{}})).rejects.toThrow(/stale/);
     await expect(executePlan({plan,wallet,runtime,snapshot:()=>({v:1}),journal:()=>({}),record:async()=>{throw new Error('disk full');}})).rejects.toThrow('disk full');
     expect(sign).not.toHaveBeenCalled();runtime.dispose();
@@ -68,7 +68,7 @@ describe('table runtime and deliberate execution',()=>{
   it('keeps indeterminate attempts blocked, including copied expressions',async()=>{
     const {runtime,wallet,sign}=fixture();
     const label=await runtime.calculate('SPUTNIK_TRANSFER',transferArgs);
-    const op=runtime.operations.get(String(label))!; const plan=reviewPlan([op],{},wallet);
+    const op=runtime.operations.get(String(label))!; const plan=await reviewPlan([op],{},wallet,runtime);
     sign.mockRejectedValue(new Error('RPC connection lost'));
     const journal: ExecutionJournal={};
     await executePlan({plan,wallet,runtime,snapshot:()=>({}),journal:()=>journal,record:async r=>{journal[r.id]=r;}});
