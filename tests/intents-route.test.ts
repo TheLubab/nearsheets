@@ -7,19 +7,20 @@ import type { WalletController } from '../src/features/wallet/application/wallet
 const input={originAsset:'nep141:wrap.near',destinationAsset:'eth-usdc',amount:'1.000001',destinationChain:'eth',recipient:'0x0000000000000000000000000000000000000001',refundTo:'dao.near',slippageTolerance:100};
 const quote={correlationId:'quote-1',timestamp:'2026-11-11T12:00:00Z',quote:{amountIn:'1000001',amountOut:'2000000',minAmountOut:'1980000',deadline:'2099-01-01T00:00:00Z',timeEstimate:30}};
 function provider(omitDeadline=false) {
+ let stage = 'REFUNDED';
  const requests: Array<{url:string;body?:Record<string,unknown>}>=[];
  const request=vi.fn<typeof fetch>(async (url,init)=>{
    const path=String(url);const body=init?.body?JSON.parse(String(init.body)):undefined;requests.push({url:path,body});
    let value: unknown;
    if(path.endsWith('/tokens'))value=[{assetId:'nep141:wrap.near',blockchain:'near',symbol:'wNEAR',decimals:6},{assetId:'eth-usdc',blockchain:'eth',symbol:'USDC',decimals:6}];
-   else if(path.includes('/status'))value={correlationId:'quote-1',status:'REFUNDED',updatedAt:'2026-11-11T12:00:00Z',swapDetails:{refundedAmount:'1000001'}};
+   else if(path.includes('/status'))value={correlationId:'quote-1',status:stage,updatedAt:'2026-11-11T12:00:00Z',swapDetails:{refundedAmount:'1000001'}};
    else {
      if(typeof body?.deadline!=='string'||!Number.isFinite(Date.parse(body.deadline))||Date.parse(body.deadline)<=Date.now())return new Response('deadline must be a valid future ISO 8601 date string',{status:400});
      value={...quote,quote:{...quote.quote,...(omitDeadline?{deadline:undefined}:{}),...(body?.dry===false?{depositAddress:'deposit.near'}:{})}};
    }
    return new Response(JSON.stringify(value),{status:200});
  });
- return {api:new OneClick('https://provider.invalid',request),request,requests};
+ return {api:new OneClick('https://provider.invalid',request),request,requests,setStage:(next:string)=>{stage=next;}};
 }
 describe('1Click estimation, explicit preparation and expiry',()=>{
  it('accepts a dry response without a deadline and preserves the raw provider response',async()=>{
@@ -63,22 +64,48 @@ describe('1Click estimation, explicit preparation and expiry',()=>{
    runtime.dispose();
  });
  it('runs a DAO swap from a table descriptor through reviewed proposal and refund tracking',async()=>{
-   const {api,requests}=provider();
+   const {api,requests,setStage}=provider();
    const policy={proposal_bond:'100',roles:[{kind:{Group:['signer.near']},permissions:['*:AddProposal']}]};
-   const runtime=new TableRuntime({view:async(_network,_contract,method)=>method==='get_policy'?policy:{spec:'ft-1.0.0',name:'Wrapped NEAR fixture',symbol:'wNEAR',decimals:6},balance:async()=> '0'},undefined,api);
+   let proposalStatus = 'InProgress';
+   const view = vi.fn(async (_network, _contract, method) => {
+     if (method === 'get_policy') return policy;
+     if (method === 'get_proposal') return {id:0,status:proposalStatus};
+     return {spec:'ft-1.0.0',name:'Wrapped NEAR fixture',symbol:'wNEAR',decimals:6};
+   });
+   const runtime=new TableRuntime({view,balance:async()=> '0'},undefined,api);
    const label=String(await runtime.calculate('INTENTS_SWAP',['swap-1','dao.near',input.originAsset,input.destinationAsset,input.amount,'eth',input.recipient,'dao.near',100,'mainnet']));
    expect(requests.filter(request=>request.body?.dry===false)).toHaveLength(0);
    const prepared=await runtime.prepare(runtime.operations.get(label)!);
    expect(requests.filter(request=>request.body?.dry===false)).toHaveLength(1);
-   const sign=vi.fn(async()=>({status:{SuccessValue:''},transaction:{hash:'hash'}}));
+   const sign=vi.fn(async()=>({status:{SuccessValue:btoa('0')},transaction:{hash:'hash'}}));
    const wallet={getState:()=>({status:'connected',network:'mainnet',connection:{accountId:'signer.near'}}),signAndSendTransaction:sign} as unknown as WalletController;
    const plan=reviewPlan([prepared],{},wallet),journal:ExecutionJournal={};
    await executePlan({plan,wallet,runtime,snapshot:()=>({}),journal:()=>journal,record:async record=>{journal[record.id]=record;}});
    expect(sign).toHaveBeenCalledWith(expect.objectContaining({receiverId:'dao.near'}));
    expect(JSON.stringify(prepared.transaction)).toContain('deposit.near');expect(JSON.stringify(prepared.transaction)).toContain('1000001');
    runtime.executions=journal;
-   expect(await runtime.calculate('NS_STATUS',[label])).toMatch(/awaiting governance/);
+   expect(journal[prepared.id]?.proposalId).toBe(0);
+   expect(await runtime.calculate('NS_STATUS',[label])).toBe('Proposal #0 · awaiting governance');
+   expect(view).toHaveBeenCalledWith('mainnet','dao.near','get_proposal',{id:0},expect.any(AbortSignal));
+   expect(requests.some(request=>request.url.includes('/status'))).toBe(false);
+   const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2099-01-02T00:00:00Z'));
+   try {
+     expect(await runtime.calculate('NS_STATUS',[label])).toBe('Proposal #0 · awaiting governance · quote expired');
+     expect(requests.some(request=>request.url.includes('/status'))).toBe(false);
+   } finally {
+     clock.mockRestore();
+   }
+   proposalStatus = 'Rejected';
+   runtime.query.removeQueries({queryKey:['mainnet','dao.near','get_proposal']});
+   expect(await runtime.calculate('NS_STATUS',[label])).toBe('Proposal #0 · Rejected');
+   proposalStatus = 'Approved';
+   runtime.query.removeQueries({queryKey:['mainnet','dao.near','get_proposal']});
+   expect(await runtime.calculate('NS_STATUS',[label])).toBe('Proposal #0 · Approved · refunded');
    expect(await runtime.calculate('INTENTS_STATUS',[label])).toEqual([['Provider stage','Updated at','Details'],['REFUNDED','2026-11-11T12:00:00Z','{"refundedAmount":"1000001"}']]);
+   setStage('SUCCESS');
+   runtime.query.removeQueries({queryKey:['intents-status']});
+   expect(await runtime.calculate('NS_STATUS',[label])).toBe('Proposal #0 · Approved · settled');
+   expect(sign).toHaveBeenCalledTimes(1);
    await expect(runtime.prepare(prepared)).rejects.toThrow(/new reference/);
    expect(requests.filter(request=>request.body?.dry===false)).toHaveLength(1);runtime.dispose();
  });

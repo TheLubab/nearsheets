@@ -5,7 +5,7 @@ import type { CalculationContext } from './read-bindings';
 import { env } from '../../config/env';
 import { estimateEvidenceSchema, OneClick, statusSchema } from '../../integrations/intents/one-click';
 import type { QuoteInput } from '../../integrations/intents/one-click';
-import type { ExecutionJournal } from './execution';
+import type { Execution, ExecutionJournal } from './execution';
 import { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import type { NearNetwork } from '../../integrations/near/network';
@@ -13,7 +13,7 @@ import { createNearProvider } from '../../integrations/near/client';
 import { amountFromBaseUnits, parseExactAmount } from '../treasury/model/exact-amount';
 import { checkNearAccountId } from '../treasury/model/near-account';
 import { CellDiagnostics } from './cell-diagnostics';
-import { invalidInput, readProblem, unavailable, staleData } from './problems';
+import { invalidInput, readProblem, TableProblem, unavailable, staleData } from './problems';
 import type { WalletTransaction } from '../../integrations/wallet/gateway';
 
 export type CellValue = string | number | boolean | null;
@@ -148,6 +148,51 @@ export class TableRuntime {
     if (!this.intents) throw unavailable('The Intents provider is not configured.');
     return this.intents;
   }
+  private async providerStatus(depositAddress: string, context?: CalculationContext) {
+    const key = ['intents-status', depositAddress];
+    const result = await this.cached(key, signal => this.intentsProvider().status(depositAddress, undefined, signal), 5000, statusSchema, context);
+    return { key, result };
+  }
+
+  private async confirmedStatus(record: Execution, context?: CalculationContext) {
+    const operation = JSON.parse(record.revision) as Operation;
+    if (operation.kind === 'SPUTNIK_VOTE') return 'Vote confirmed';
+    const id = record.proposalId;
+    if (id === undefined) return record.transactionHash
+      ? 'Proposal submitted · check transaction in Inspect to recover proposal ID'
+      : 'Proposal submitted · no proposal ID or transaction hash recorded';
+
+    const args = { id };
+    const key = JSON.stringify([operation.network, operation.source, 'get_proposal', args]);
+    let proposal: unknown;
+    try {
+      proposal = await this.read(operation.network, operation.source, 'get_proposal', args, context);
+    } catch (cause) {
+      if (cause instanceof TableProblem && /\bERR_NO_PROPOSAL\b/.test(cause.problem.details ?? '')) return `Proposal #${id} · no longer on DAO`;
+      throw cause;
+    }
+    const { status } = z.object({ id: z.literal(id), status: z.string() }).parse(proposal);
+    const prefix = `${context?.savedKeys.has(key) ? 'Saved proposal' : 'Proposal'} #${id}`;
+    const governance = status === 'InProgress' ? 'awaiting governance' : status;
+    const route = operation.intents;
+    if (!route?.depositAddress) return `${prefix} · ${governance}`;
+    const expired = Date.parse(route.expiresAt) <= Date.now();
+    if (status !== 'Approved') return `${prefix} · ${governance}${expired ? ' · quote expired' : ''}`;
+
+    const provider = await this.providerStatus(route.depositAddress, context);
+    const providerSaved = context?.savedKeys.has(JSON.stringify(provider.key));
+    const stages = {
+      PENDING_DEPOSIT: expired ? 'quote expired · awaiting deposit confirmation' : 'awaiting deposit',
+      KNOWN_DEPOSIT_TX: 'deposit detected',
+      PROCESSING: 'settlement processing',
+      SUCCESS: 'settled',
+      INCOMPLETE_DEPOSIT: 'incomplete deposit',
+      REFUNDED: 'refunded',
+      FAILED: 'swap failed',
+    };
+    return `${prefix} · Approved · ${providerSaved ? 'saved provider status: ' : ''}${stages[provider.result.status]}`;
+  }
+
   private recordOperation(label: string, data: Omit<Operation, 'revision' | 'saved'>, context?: CalculationContext) {
     const operation = { ...data, revision: JSON.stringify(data) };
     this.operations.set(label, context?.savedKeys.size ? { ...operation, saved: true } : operation);
@@ -175,9 +220,7 @@ export class TableRuntime {
       if (name === 'NS_RECEIPT') return [['Attempt state','Transaction','Signer','Recorded at'],[record.state,record.transactionHash,record.account,record.at]];
       const prior = JSON.parse(record.revision) as Operation;
       if (!prior.intents?.depositAddress) throw new Error('No prepared Intents deposit is recorded.');
-      const depositAddress = prior.intents.depositAddress;
-      const key = ['intents-status',depositAddress];
-      const result = await this.cached(key,signal=>this.intentsProvider().status(depositAddress,undefined,signal),5000,statusSchema,context);
+      const { key, result } = await this.providerStatus(prior.intents.depositAddress, context);
       return [[context?.savedKeys.has(JSON.stringify(key)) ? 'Saved provider stage' : 'Provider stage','Updated at','Details'],[result.status,result.updatedAt,JSON.stringify(result.swapDetails ?? {})]];
     }
     if (name === 'NS_STATUS') {
@@ -185,7 +228,7 @@ export class TableRuntime {
       if (!op) throw staleData('Recalculate the action cell first.');
       const record = this.executions[op.id];
       if (!record) return 'Draft · not submitted';
-      return record.state === 'confirmed' ? (op.kind !== 'SPUTNIK_VOTE' ? 'Proposal submitted · awaiting governance' : 'Vote confirmed') : record.state;
+      return record.state === 'confirmed' ? this.confirmedStatus(record, context) : record.state;
     }
     if (name === 'NS_FIELD') {
       const draft = this.operations.get(text(args[0]));

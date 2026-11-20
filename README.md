@@ -33,7 +33,7 @@ This is programmable money through a familiar interface: formulas connect blockc
 
 ## How it works
 
-The spreadsheet is the interface. Blockchain functions read data into cells and prepare actions from your inputs. Select action cells, review the exact details, then sign with your wallet. Recalculating a formula never moves money. Shared treasury payments use Sputnik DAO proposals and its approval rules; submitting a proposal isn't the same as completing a payment.
+The spreadsheet is the interface. Blockchain functions read data into cells and prepare actions from your inputs. Select action cells, review the exact details, then sign with your wallet. Recalculating a formula never moves money. Shared treasury payments use Sputnik DAO proposals and their approval rules. `NS_STATUS` follows the proposal and, for approved cross-chain swaps, shows the Intents deposit and settlement or refund status in the sheet.
 
 Underneath are Univer for the spreadsheet, NEAR RPC for reads, NEAR Connect for signing and NEAR Intents for supported cross-chain routes. Spreadsheets save in your browser’s `near-sheets` database. Existing spreadsheets migrate automatically from the old store, which is kept as a recovery backup. Use **File → Download backup (.json)** to back them up or move them to another machine.
 

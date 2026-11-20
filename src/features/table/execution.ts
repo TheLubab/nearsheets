@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { WalletController } from '../wallet/application/wallet-controller';
 import { WalletCancelledError } from '../../integrations/wallet/gateway';
-import { parseTransactionOutcome } from '../treasury/model/proposal-submissions';
+import { parseProposalId, parseTransactionOutcome } from '../treasury/model/proposal-submissions';
 import type { Operation, TableRuntime } from './runtime';
 import { checkRouteExpiry, savedDraftProblem } from './runtime';
 import { TABLE_RESOURCE } from './table-snapshot';
@@ -13,6 +13,7 @@ export const executionSchema = z.object({
   state:z.enum(['awaiting-wallet','indeterminate','confirmed','failed','cancelled']),
   transactionHash:z.string().nullable(), message:z.string().nullable(),
   technicalDetails:z.string().optional(),
+  proposalId:z.number().int().nonnegative().optional(),
 });
 export type Execution = z.infer<typeof executionSchema>;
 export type ExecutionJournal = Record<string, Execution>;
@@ -106,7 +107,8 @@ export async function executePlan(options: {
     let result: Execution;
     try {
       const outcome = parseTransactionOutcome(await wallet.signAndSendTransaction(op.transaction));
-      result = {...pending,state:outcome.kind === 'success' ? 'confirmed' : outcome.kind === 'failure' ? 'failed' : 'indeterminate',transactionHash:outcome.transactionHash,message:outcome.message};
+      const proposalId = op.kind !== 'SPUTNIK_VOTE' && outcome.kind === 'success' ? parseProposalId(outcome.returnValue) : null;
+      result = {...pending,...(proposalId === null ? {} : {proposalId}),state:outcome.kind === 'success' ? 'confirmed' : outcome.kind === 'failure' ? 'failed' : 'indeterminate',transactionHash:outcome.transactionHash,message:outcome.message};
     } catch (cause) {
       const cancelled=cause instanceof WalletCancelledError;
       result = {...pending,state:cancelled ? 'cancelled' : 'indeterminate',
@@ -126,5 +128,6 @@ export async function reconcileExecution(record:Execution,runtime:TableRuntime):
   const transaction = z.object({transaction:z.object({hash:z.string(),signer_id:z.string(),receiver_id:z.string()})}).parse(raw).transaction;
   if (transaction.hash !== record.transactionHash || transaction.signer_id !== record.account || transaction.receiver_id !== operation.source) throw new Error('The transaction does not match the recorded execution.');
   const outcome = parseTransactionOutcome(raw);
-  return {...record,state:outcome.kind==='success'?'confirmed':outcome.kind==='failure'?'failed':'indeterminate',message:outcome.message};
+  const proposalId = operation.kind !== 'SPUTNIK_VOTE' && outcome.kind === 'success' ? parseProposalId(outcome.returnValue) : null;
+  return {...record,...(proposalId === null ? {} : {proposalId}),state:outcome.kind==='success'?'confirmed':outcome.kind==='failure'?'failed':'indeterminate',message:outcome.message};
 }

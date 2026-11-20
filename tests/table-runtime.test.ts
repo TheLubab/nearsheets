@@ -60,8 +60,8 @@ describe('table runtime and deliberate execution',()=>{
     const label=await runtime.calculate('SPUTNIK_TRANSFER',transferArgs);
     const op=runtime.operations.get(String(label))!;
     const record={id:op.id,revision:op.revision,account:'signer.testnet',at:new Date().toISOString(),state:'indeterminate' as const,transactionHash:'hash',message:null};
-    runtime.ports.transaction=vi.fn(async()=>({status:{SuccessValue:''},transaction:{hash:'hash',signer_id:'signer.testnet',receiver_id:op.source}}));
-    expect((await reconcileExecution(record,runtime)).state).toBe('confirmed');
+    runtime.ports.transaction=vi.fn(async()=>({status:{SuccessValue:btoa('42')},transaction:{hash:'hash',signer_id:'signer.testnet',receiver_id:op.source}}));
+    expect(await reconcileExecution(record,runtime)).toMatchObject({state:'confirmed',proposalId:42});
     await expect(reconcileExecution({...record,transactionHash:null},runtime)).rejects.toThrow(/remains indeterminate/);
     expect(sign).not.toHaveBeenCalled();void wallet;runtime.dispose();
   });
