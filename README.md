@@ -43,6 +43,8 @@ Saved spreadsheets and JSON backups can reopen with their last saved blockchain 
 
 NearSheets is a working application, deployed and available to use today, with automated tests covering its core behavior. Use Node 24 and pnpm 12 to run it locally.
 
+If you use Nix, run `nix develop` from the checkout to get both tools.
+
 ```sh
 git clone https://github.com/TheLubab/nearsheets.git
 cd nearsheets
