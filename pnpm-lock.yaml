@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@univerjs/ui@1.4.0': e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146
+
 importers:
 
   .:
@@ -2360,7 +2363,7 @@ snapshots:
       '@univerjs/engine-render': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/icons': 1.47.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@univerjs/protocol': 1.4.0
-      '@univerjs/ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
+      '@univerjs/ui': 1.4.0(patch_hash=e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
       react: 19.3.1
       rxjs: 7.8.2
     transitivePeerDependencies:
@@ -2433,7 +2436,7 @@ snapshots:
       '@univerjs/sheets-numfmt': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/sheets-numfmt-ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/sheets-ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
-      '@univerjs/ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
+      '@univerjs/ui': 1.4.0(patch_hash=e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       rxjs: 7.8.2
@@ -2479,7 +2482,7 @@ snapshots:
       '@univerjs/sheets': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/sheets-formula': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/sheets-ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
-      '@univerjs/ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
+      '@univerjs/ui': 1.4.0(patch_hash=e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       rxjs: 7.8.2
@@ -2508,7 +2511,7 @@ snapshots:
       '@univerjs/sheets': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/sheets-numfmt': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/sheets-ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
-      '@univerjs/ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
+      '@univerjs/ui': 1.4.0(patch_hash=e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
       react: 19.3.1
       rxjs: 7.8.2
     transitivePeerDependencies:
@@ -2537,7 +2540,7 @@ snapshots:
       '@univerjs/protocol': 1.4.0
       '@univerjs/sheets': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/telemetry': 1.4.0(react@19.3.1)(rxjs@7.8.2)
-      '@univerjs/ui': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
+      '@univerjs/ui': 1.4.0(patch_hash=e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)
       react: 19.3.1
       rxjs: 7.8.2
     transitivePeerDependencies:
@@ -2565,7 +2568,7 @@ snapshots:
 
   '@univerjs/themes@1.4.0': {}
 
-  '@univerjs/ui@1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)':
+  '@univerjs/ui@1.4.0(patch_hash=e171552c9fa6b96f97e36f90647f861ad516e32987a365a3468d0fd36c6bd146)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(rxjs@7.8.2)':
     dependencies:
       '@univerjs/core': 1.4.0(react@19.3.1)(rxjs@7.8.2)
       '@univerjs/design': 1.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

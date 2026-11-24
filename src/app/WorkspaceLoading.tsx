@@ -6,6 +6,7 @@ const PHOTOS = [
   { file: 'startup-lavender-field.jpg', author: 'Dimitri Iakymuk', credit: 'https://unsplash.com/photos/purple-flower-field-under-blue-sky-during-daytime-mCR10j_B6sM' },
   { file: 'startup-purple-flowers.jpg', author: 'Isabella Fischer', credit: 'https://unsplash.com/photos/purple-petaled-flower-plants-nBcOnMoP18g' },
 ] as const;
+const startupPhoto = PHOTOS[Math.floor(Math.random() * PHOTOS.length)] ?? PHOTOS[0];
 let previousPrefix: string | undefined;
 
 /** Keep the existing scene briefly while the ready editor is revealed beneath it. */
@@ -24,12 +25,7 @@ export function WorkspaceLoading({ error, active = true }: { error?: string | nu
   return mounted ? <LoadingScene error={error} exiting={!active}/> : null;
 }
 
-/** Reuse the photo preloaded by the HTML head; the image never gates readiness. */
 function LoadingScene({ error, exiting }: { error?: string | null; exiting: boolean }) {
-  const [photo] = useState(() => {
-    const preloaded = typeof document === 'undefined' ? null : document.getElementById('startup-photo')?.getAttribute('href');
-    return PHOTOS.find(candidate => preloaded?.endsWith(candidate.file)) ?? PHOTOS[0];
-  });
   const photoRef = useRef<HTMLImageElement>(null);
   const [appearance, setAppearance] = useState<'pending' | 'photo' | 'fallback'>('pending');
   useEffect(() => {
@@ -47,7 +43,7 @@ function LoadingScene({ error, exiting }: { error?: string | null; exiting: bool
       setAppearance(current => current === 'pending' ? decoded ? 'photo' : 'fallback' : current);
     });
     return () => { active = false; window.clearTimeout(timeout); };
-  }, [photo]);
+  }, []);
   const visible = !!error || appearance !== 'pending';
   // Choose once for this appearance, not on the subject's React re-renders.
   const [copy] = useState(() => {
@@ -71,7 +67,7 @@ function LoadingScene({ error, exiting }: { error?: string | null; exiting: bool
 
   return <section className="workspace-loading" data-exiting={exiting} data-visible={visible} data-appearance={appearance} inert={exiting} aria-hidden={exiting || undefined} aria-label={error ? 'Spreadsheet could not open' : 'Opening spreadsheet'}>
     <div className="workspace-loading__backdrop" aria-hidden="true">
-      <img ref={photoRef} className="workspace-loading__photo" src={`${import.meta.env.BASE_URL}${photo.file}`} alt="" loading="eager" fetchPriority="high"/>
+      <img ref={photoRef} className="workspace-loading__photo" src={`${import.meta.env.BASE_URL}${startupPhoto.file}`} alt="" loading="eager" fetchPriority="high"/>
     </div>
     <div className="workspace-loading__panel">
       {error ? <div role="alert">
@@ -92,6 +88,6 @@ function LoadingScene({ error, exiting }: { error?: string | null; exiting: bool
         </p>
       </>}
     </div>
-    <a className="workspace-loading__credit" href={photo.credit} target="_blank" rel="noopener noreferrer">Photo · {photo.author} / Unsplash ↗</a>
+    <a className="workspace-loading__credit" href={startupPhoto.credit} target="_blank" rel="noopener noreferrer">Photo · {startupPhoto.author} / Unsplash ↗</a>
   </section>;
 }

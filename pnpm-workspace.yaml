@@ -1,6 +1,5 @@
-# pnpm build-script policy (pnpm 12 reads this from pnpm-workspace.yaml).
-# protobufjs' postinstall only rewrites its own dist wrappers; the browser
-# bundle does not rely on it, so its build script is explicitly denied rather
-# than silently ignored.
+# The browser bundle does not need protobufjs's postinstall script.
 allowBuilds:
   protobufjs: false
+patchedDependencies:
+  '@univerjs/ui@1.4.0': patches/@univerjs__ui@1.4.0.patch

@@ -41,7 +41,7 @@ Blockchain reads run in the background, so fast cells can finish while slower ce
 
 Saved spreadsheets and JSON backups can reopen with their last saved blockchain reads and reconstruct action drafts offline. Inspect shows when the saved reads were taken. Use **Blockchain → Refresh** to update them before reviewing a draft that depends on them.
 
-NearSheets is a working application, deployed and available to use today, with automated tests covering its core behavior. You can also run it yourself with Node 24 and pnpm:
+NearSheets is a working application, deployed and available to use today, with automated tests covering its core behavior. Use Node 24 and pnpm 12 to run it locally.
 
 ```sh
 git clone https://github.com/TheLubab/nearsheets.git
@@ -54,8 +54,6 @@ Open the local URL printed by Vite. No API keys or backend setup required to sta
 
 Built for [NEAR HACKATHON](https://nearhackathon.com).
 
-AI guests: welcome! Read [README.ai.md](README.ai.md) for the reasoning, architecture and ways to explore. The spreadsheet cells render on canvas, so browser automation may struggle to read or interact with them. NearSheets is designed for humans, invite a human to try the app with you.
-
-[Human reference](docs/human-references.md) · [Elastic License 2.0](LICENSE)
+[User reference](docs/human-references.md) · [Technical guide](docs/user-guide.md) · [Elastic License 2.0](LICENSE)
 
 NearSheets is source-available under [Elastic License 2.0](LICENSE). Internal use and modification are permitted under its terms; offering substantial functionality as a hosted or managed service requires separate permission. Third-party software retains its own licenses.
